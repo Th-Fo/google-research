@@ -2075,6 +2075,123 @@ class ControlledZGateTest(parameterized.TestCase):
     self.assertIs(gate, gate.permute_qubits(permutation, inverse=inverse))
 
 
+class FermionicSimulationGateTest(parameterized.TestCase):
+
+  def test_initializer(self):
+    # preparation work: choose the gate parameters
+    theta, phi = np.pi * (2.0 * np.random.rand(2) - 1.0)
+
+    # construct the FermionicSimulationGate and retrieve num_qubits
+    num_qubits = circuit.FermionicSimulationGate(theta, phi).get_num_qubits()
+
+    # check type and value of num_qubits
+    self.assertIs(type(num_qubits), int)
+    self.assertEqual(num_qubits, 2)
+
+  @parameterized.parameters(itertools.product(_testing_angles(), repeat=2))
+  def test_vs_cirq(self, theta, phi):
+    # preparation work: construct the FermionicSimulationGate
+    gate = circuit.FermionicSimulationGate(theta, phi)
+
+    # construct the equivalent gate in Cirq
+    cirq_gate = cirq.FSimGate(theta=theta, phi=phi)
+
+    # check that they match (up to a potential global phase)
+    np.testing.assert_allclose(
+        gate.get_pauli_transform(),  # trusted from its unit test below
+        circuit.compute_pauli_transform(cirq.unitary(cirq_gate)),
+        rtol=1e-5, atol=1e-8
+    )
+
+  @parameterized.parameters(itertools.product(_testing_angles(), repeat=2))
+  def test_operator(self, theta, phi):
+    # preparation work: construct the FermionicSimulationGate
+    gate = circuit.FermionicSimulationGate(theta, phi)
+
+    # call the method to be tested
+    operator = gate.get_operator()
+
+    # check type, dtype and shape for operator
+    self.assertIs(type(operator), np.ndarray)
+    self.assertEqual(operator.dtype, complex)
+    self.assertTupleEqual(operator.shape, (4, 4))
+
+    # check value for operator
+    _check_unitarity(operator, 4)
+    np.testing.assert_allclose(
+        circuit.compute_pauli_transform(operator),
+        circuit.compute_pauli_transform([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, np.cos(theta), -1.0j*np.sin(theta), 0.0],
+            [0.0, -1.0j*np.sin(theta), np.cos(theta), 0.0],
+            [0.0, 0.0, 0.0, np.exp(-1.0j*phi)]
+        ]),
+        rtol=1e-5, atol=1e-8
+    )
+
+  @parameterized.parameters(itertools.product(_testing_angles(), repeat=2))
+  def test_pauli_transform(self, theta, phi):
+    # preparation work: construct the FermionicSimulationGate
+    gate = circuit.FermionicSimulationGate(theta, phi)
+
+    # call the method to be tested
+    pauli_transform = gate.get_pauli_transform()
+
+    # check type, dtype and shape for pauli_transform
+    self.assertIs(type(pauli_transform), np.ndarray)
+    self.assertEqual(pauli_transform.dtype, float)
+    self.assertTupleEqual(pauli_transform.shape, (15, 15))
+
+    # check value for pauli_transform
+    np.testing.assert_allclose(  # check orthogonality
+        np.dot(pauli_transform, pauli_transform.T),
+        np.eye(15),
+        rtol=1e-5, atol=1e-8
+    )
+    np.testing.assert_allclose(
+        pauli_transform,
+        circuit.compute_pauli_transform([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, np.cos(theta), -1.0j*np.sin(theta), 0.0],
+            [0.0, -1.0j*np.sin(theta), np.cos(theta), 0.0],
+            [0.0, 0.0, 0.0, np.exp(-1.0j*phi)]
+        ]),
+        rtol=1e-5, atol=1e-8
+    )
+
+  @parameterized.parameters(itertools.product(_testing_angles(), repeat=2))
+  def test_identity(self, theta, phi):
+    # preparation work: construct the FermionicSimulationGate and an equivalent
+    # MatrixGate
+    gate = circuit.FermionicSimulationGate(theta, phi)
+    clone = circuit.MatrixGate(gate.get_operator())
+
+    # for gate.is_identity(...), check type and consistency with
+    # clone.is_identity(...) (which is trusted from the unit test for
+    # MatrixGate) with both options for phase_invariant
+    _check_boolean(
+        self,
+        gate.is_identity(phase_invariant=False),
+        clone.is_identity(phase_invariant=False)
+    )
+    _check_boolean(
+        self,
+        gate.is_identity(phase_invariant=True),
+        clone.is_identity(phase_invariant=True)
+    )
+
+  @parameterized.parameters(itertools.product([(0, 1), (1, 0)], [False, True]))
+  def test_permute_qubits(self, permutation, inverse):
+    # preparation work: choose the gate parameters
+    theta, phi = np.pi * (2.0 * np.random.rand(2) - 1.0)
+
+    # preparation work: construct the FermionicSimulationGate
+    gate = circuit.FermionicSimulationGate(theta, phi)
+
+    # check the function to be tested
+    self.assertIs(gate, gate.permute_qubits(permutation, inverse=inverse))
+
+
 class ComputePauliTransformTest(parameterized.TestCase):
 
   @parameterized.parameters(1, 2, 3, 4)

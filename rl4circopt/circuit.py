@@ -1329,6 +1329,58 @@ class ControlledZGate(Gate):
     return self
 
 
+class FermionicSimulationGate(Gate):
+  """The fermionic simulation gate (often abbreviated as fSim).
+
+  The fermionic simulation gate is parameterized by two phase angles, theta and
+  phi. Its operator reads [cmp. eq. 53 in the supplementary of Arute et al.,
+  "Quantum supremacy using a programmable superconducting processor", Nature
+  574, 505–510(2019), https://www.nature.com/articles/s41586-019-1666-5]:
+
+      [ 1,             0,             0,           0 ]
+      [ 0,    cos(theta), -i*sin(theta),           0 ]
+      [ 0, -i*sin(theta),    cos(theta),           0 ]
+      [ 0,             0,             0, exp(-i*phi) ]
+
+  As a subclass of Gate, FermionicSimulationGate is immutable.
+  """
+
+  def __init__(self, theta: float, phi: float):
+    super().__init__(num_qubits=2)
+
+    self._theta = float(theta)
+    self._phi = float(phi)
+
+  def get_theta(self) -> float:
+    return self._theta
+
+  def get_phi(self) -> float:
+    return self._phi
+
+  def get_operator(self):
+    # implements method from parent class Gate
+    return np.array([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, np.cos(self._theta), -1.0j*np.sin(self._theta), 0.0],
+        [0.0, -1.0j*np.sin(self._theta), np.cos(self._theta), 0.0],
+        [0.0, 0.0, 0.0, np.exp(-1.0j*self._phi)]
+    ])
+
+  def is_identity(self, phase_invariant=False, **kwargs):
+    # overrides method from parent class Gate
+    #
+    # This implementation avoids to construct the operator which might be a
+    # little more efficient.
+    return bool(np.isclose(np.cos(self._theta), 1.0)
+                and np.isclose(np.cos(self._phi), 1.0))
+
+  def permute_qubits(self, permutation, inverse=False):
+    # overrides method from parent class Gate
+    _check_permutation(np.array(permutation).astype(int, casting='safe'), 2)
+    # FSim-Gate is symmetric.
+    return self
+
+
 def compute_pauli_transform(operator):
   """Compute the action of a unitary operator on the Pauli operators.
 
