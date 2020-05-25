@@ -60,7 +60,8 @@ def tf_non_stream_model_accuracy(
   flags.batch_size = 100  # set batch size for inference
   set_size = int(set_size / flags.batch_size) * flags.batch_size
   model = models.MODELS[flags.model_name](flags)
-  model.load_weights(os.path.join(flags.train_dir, weights_name))
+  weights_path = os.path.join(flags.train_dir, weights_name)
+  model.load_weights(weights_path).expect_partial()
   total_accuracy = 0.0
   count = 0.0
   for i in range(0, set_size, flags.batch_size):
@@ -130,7 +131,8 @@ def tf_stream_state_internal_model_accuracy(
   tf.keras.backend.set_learning_phase(0)
   flags.batch_size = inference_batch_size  # set batch size
   model = models.MODELS[flags.model_name](flags)
-  model.load_weights(os.path.join(flags.train_dir, weights_name))
+  weights_path = os.path.join(flags.train_dir, weights_name)
+  model.load_weights(weights_path).expect_partial()
 
   model_stream = utils.to_streaming_inference(
       model, flags, Modes.STREAM_INTERNAL_STATE_INFERENCE)
@@ -218,8 +220,8 @@ def tf_stream_state_external_model_accuracy(
   tf.keras.backend.set_learning_phase(0)
   flags.batch_size = inference_batch_size  # set batch size
   model = models.MODELS[flags.model_name](flags)
-  model.load_weights(os.path.join(flags.train_dir, weights_name))
-
+  weights_path = os.path.join(flags.train_dir, weights_name)
+  model.load_weights(weights_path).expect_partial()
   model_stream = utils.to_streaming_inference(
       model, flags, Modes.STREAM_EXTERNAL_STATE_INFERENCE)
 
@@ -473,7 +475,8 @@ def convert_model_tflite(flags,
                          folder,
                          mode,
                          fname,
-                         weights_name='best_weights'):
+                         weights_name='best_weights',
+                         optimizations=None):
   """Convert model to streaming and non streaming TFLite.
 
   Args:
@@ -482,6 +485,7 @@ def convert_model_tflite(flags,
       mode: inference mode
       fname: file name of converted model
       weights_name: file name with model weights
+      optimizations: list of optimization options
   """
   tf.reset_default_graph()
   config = tf.ConfigProto()
@@ -491,8 +495,8 @@ def convert_model_tflite(flags,
   tf.keras.backend.set_learning_phase(0)
   flags.batch_size = 1  # set batch size for inference
   model = models.MODELS[flags.model_name](flags)
-  model.load_weights(os.path.join(flags.train_dir, weights_name))
-
+  weights_path = os.path.join(flags.train_dir, weights_name)
+  model.load_weights(weights_path).expect_partial()
   # convert trained model to non streaming TFLite stateless
   # to finish other tests we do not stop program if exception happen here
   path_model = os.path.join(flags.train_dir, folder)
@@ -500,7 +504,9 @@ def convert_model_tflite(flags,
     os.makedirs(path_model)
   try:
     with open(os.path.join(path_model, fname), 'wb') as fd:
-      fd.write(utils.model_to_tflite(sess, model, flags, mode, path_model))
+      fd.write(
+          utils.model_to_tflite(sess, model, flags, mode, path_model,
+                                optimizations))
   except IOError as e:
     logging.warning('FAILED to write file: %s', e)
   except (ValueError, AttributeError, RuntimeError, TypeError) as e:
@@ -524,7 +530,8 @@ def convert_model_saved(flags, folder, mode, weights_name='best_weights'):
   tf.keras.backend.set_learning_phase(0)
   flags.batch_size = 1  # set batch size for inference
   model = models.MODELS[flags.model_name](flags)
-  model.load_weights(os.path.join(flags.train_dir, weights_name))
+  weights_path = os.path.join(flags.train_dir, weights_name)
+  model.load_weights(weights_path).expect_partial()
 
   path_model = os.path.join(flags.train_dir, folder)
   if not os.path.exists(path_model):
@@ -536,4 +543,4 @@ def convert_model_saved(flags, folder, mode, weights_name='best_weights'):
     logging.warning('FAILED to write file: %s', e)
   except (ValueError, AttributeError, RuntimeError, TypeError,
           AssertionError) as e:
-    logging.warning('FAILED to convert to stream SavedModel: %s', e)
+    logging.warning('WARNING: failed to convert to SavedModel: %s', e)

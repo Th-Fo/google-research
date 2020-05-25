@@ -110,15 +110,18 @@ These numbers should be taken as indicative and may be updated in the future. In
 the table below, SGD refers to the Schema-Guided Dialogue dataset. SGD-Single
 model is trained and evaluated on single domain dialogues only whereas SGD-All
 model has been trained and evaluated on the entire dataset. We are also
-reporting results on [WOZ 2.0 dataset](https://arxiv.org/pdf/1606.03777.pdf) as
-a sanity check.
+reporting results on [WOZ 2.0 dataset](https://arxiv.org/pdf/1606.03777.pdf) and
+[MultiWOZ 2.1](https://arxiv.org/pdf/1907.01669.pdf) datasets.
 
-| Metrics                | SGD-Single | SGD-All | WOZ 2.0 |
-|------------------------|:----------:|:-------:|:-------:|
-| Active Intent Accuracy | 0.966      | 0.885   | NA      |
-| Requested Slots F1     | 0.965      | 0.972   | 0.970   |
-| Average Goal Accuracy  | 0.776      | 0.694   | 0.915   |
-| Joint Goal Accuracy    | 0.486      | 0.383   | 0.814   |
+| Metrics                | SGD-Single | SGD-All | WOZ 2.0 | MultiWOZ 2.1\* |
+|------------------------|:----------:|:-------:|:-------:|:--------------:|
+| Active Intent Accuracy | 0.966      | 0.885   | NA      | 0.924          |
+| Requested Slots F1     | 0.965      | 0.972   | 0.970   | NA             |
+| Average Goal Accuracy  | 0.776      | 0.694   | 0.915   | 0.875          |
+| Joint Goal Accuracy    | 0.486      | 0.383   | 0.814   | 0.434          |
+
+\* Please note that MultiWOZ 2.1 experiments use a different experimental setup
+as described below.
 
 ### Required files
 
@@ -182,6 +185,20 @@ python -m schema_guided_dst.baseline.train_and_predict \
 
 ## Evaluation
 
+The definition of joint goal accuracy used by the SGD dataset is different from
+the ones used in previous works. Traditionally, joint goal accuracy has been
+defined as the accuracy of predicting the dialogue state for  **all domains**
+correctly. This is not practical in the schema-guided setup, as the large number
+of domains and services would result in near zero joint goal accuracy if the
+traditional definition is used. Furthermore, an incorrect  dialogue state
+prediction for a service in the beginning of a dialogue degrades the joint goal
+accuracy for all future turns, even if the predictions for all other services
+are correct. Hence, joint goal accuracy calculated this way may not provide as
+much insight into the performance on different services. To address these
+concerns, only the services which are active or pertinent in a turn are included
+in the dialogue state for SGD dataset. Thus, a service ceases to be a part of
+the dialogue state once its intent has been fulfilled.
+
 Evaluation is done using `evaluate.py` which calculates the values of different
 metrics defined in `metrics.py` by comparing model outputs with ground truth.
 The script `evaluate.py` requires that all model predictions should be saved in
@@ -197,3 +214,33 @@ python -m schema_guided_dst.evaluate \
 --prediction_dir <generated_model_predictions> --eval_set dev \
 --output_metric_file <path_to_json_for_report>
 ```
+
+## Evaluation on MultiWOZ 2.1
+
+The SGD dataset uses different evaluation metrics to those used by MultiWOZ.
+However, in order to make results comparable to previous works, the following
+choices have been made in MultiWOZ experiments:
+
+* Each turn contains frames for all services rather than just for the active
+  services.
+* Joint goal accuracy corresponds to the correct dialogue state prediction for
+  all slots *across all domains* in a turn.
+* Strict match is used for non-categorical slots in place of fuzzy string match
+  based score.
+
+Following contains how to test baseline model's performance on MultiWOZ 2.1.
+
+1. Download [MultiWOZ 2.1](https://github.com/budzianowski/multiwoz/tree/master/data).
+2. Data preprocessing: Process MultiWOZ 2.1 to follow the data format of the
+   Schema-Guided Dialogue dataset.
+
+  ```shell
+  python -m schema_guided_dst.multiwoz.create_data_from_multiwoz \
+  --input_data_dir=<downloaded_multiwoz2.1_dir> \
+  --output_dir=<converted_data_dir>
+  ```
+3. Training and prediction: Same as described above except for using
+   `--task_name=multiwoz21_all` in the command.
+
+4. Evaluation: Same as described above except for adding
+   `--joint_acc_across_turn=true --use_fuzzy_match=false` in the command.

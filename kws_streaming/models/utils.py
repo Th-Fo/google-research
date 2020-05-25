@@ -23,7 +23,7 @@ from kws_streaming.layers.compat import tf1
 from kws_streaming.layers.modes import Modes
 # pylint: disable=g-direct-tensorflow-import
 from tensorflow.python.keras import models
-from tensorflow.python.keras.engine import network
+from tensorflow.python.keras.engine import functional
 # pylint: enable=g-direct-tensorflow-import
 
 
@@ -91,7 +91,7 @@ def _clone_model(model, input_tensors):
 
   # Reconstruct model from the config, using the cloned layers.
   input_tensors, output_tensors, created_layers = (
-      network.reconstruct_from_config(
+      functional.reconstruct_from_config(
           model_config, created_layers=created_layers))
 
   new_model = tf.keras.Model(input_tensors, output_tensors, name=model.name)
@@ -260,7 +260,8 @@ def model_to_tflite(sess,
                     model_non_stream,
                     flags,
                     mode=Modes.STREAM_EXTERNAL_STATE_INFERENCE,
-                    save_model_path=None):
+                    save_model_path=None,
+                    optimizations=None):
   """Convert non streaming model to tflite inference model.
 
   In this case inference graph will be stateless.
@@ -274,6 +275,7 @@ def model_to_tflite(sess,
     mode: inference mode it can be streaming with external state or non
       streaming
     save_model_path: path to save intermediate model summary
+    optimizations: list of optimization options
 
   Returns:
     tflite model
@@ -292,10 +294,14 @@ def model_to_tflite(sess,
   converter = tf1.lite.TFLiteConverter.from_session(
       sess, model_stateless_stream.inputs, model_stateless_stream.outputs)
   converter.inference_type = tf1.lite.constants.FLOAT
-  converter.target_spec.supported_ops = [
-      tf1.lite.OpsSet.TFLITE_BUILTINS, tf1.lite.OpsSet.SELECT_TF_OPS
-  ]
+
+  # this will enable audio_spectrogram and mfcc in TFLite
+  converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS]
+  converter.allow_custom_ops = True
+
   converter.experimental_new_converter = True
+  if optimizations:
+    converter.optimizations = optimizations
   tflite_model = converter.convert()
   return tflite_model
 

@@ -1,4 +1,6 @@
 # Set up for model training and benchmarking
+# Below experiments were reported in paper
+[Streaming keyword spotting on mobile devices](https://arxiv.org/abs/2005.06720)
 
 
 ## Set up environment:
@@ -14,16 +16,16 @@ KWS_PATH=/tmp/test
 
 # set up virtual env
 sudo pip install virtualenv
-virtualenv --system-site-packages -p python2 ./venv
-source ./venv/bin/activate
+virtualenv --system-site-packages -p python3 ./venv3
+source ./venv3/bin/activate
 
-# install TensorFlow CPU version (just in case if you do not have CUDA/GPU)
-# correct TensorFlow version is important
+# install TensorFlow, correct TensorFlow version is important
 pip install --upgrade pip
-pip install tensorflow==2.1.0-rc1
+pip install tf_nightly # was tested on tf_nightly-2.3.0.dev20200515-cp36-cp36m-manylinux2010_x86_64.whl
 
 # install pydot and graphviz
-sudo apt install python-pydot python-pydot-ng graphviz
+pip install pydot
+pip install graphviz
 
 
 ## Set up data sets:
@@ -133,6 +135,9 @@ DATA_PATH=$KWS_PATH/data1
 # for example data V1
 MODELS_PATH=$KWS_PATH/models1
 
+# or models trained on data V2
+# MODELS_PATH=$KWS_PATH/models2
+
 # Now we can run below commands with "--train 0"
 # which will evaluate the model and produce
 # accuracy report with TFLite modules.
@@ -144,20 +149,17 @@ MODELS_PATH=$KWS_PATH/models1
 # To train model training evaluation we can use bazel (commented below)
 # or use standard python
 
-
+# CMD_TRAIN="bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval --"
+CMD_TRAIN="python -m kws_streaming.train.model_train_eval"
 
 # ds_cnn_stride model =====================
-
-# trained on data V2 accuracy: 96.3
-# trained on data V1 accuracy: 95.8
-# bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/ds_cnn_stride/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -165,6 +167,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 ds_cnn \
 --cnn1_kernel_size "(10,4)" \
 --cnn1_dilation_rate "(1,1)" \
@@ -176,6 +184,7 @@ ds_cnn \
 --bn_center 1 \
 --bn_scale 0 \
 --bn_renorm 0 \
+--dw2_dilation_rate '(1,1),(1,1),(1,1),(1,1),(1,1)' \
 --dw2_kernel_size '(3,3),(3,3),(3,3),(3,3),(3,3)' \
 --dw2_strides '(2,2),(1,1),(1,1),(1,1),(1,1)' \
 --dw2_padding "same" \
@@ -192,17 +201,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model --graph=/data/local/tmp/mod
 
 
 # ds_cnn_stream =====================
-
-# trained on data V2 accuracy: 95.9
-# trained on data V1 accuracy: 95.2
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/ds_cnn_stream/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -210,6 +215,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 ds_cnn \
 --cnn1_kernel_size "(3,3)" \
 --cnn1_dilation_rate "(2,1)" \
@@ -244,17 +255,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/loc
 
 
 # svdf =====================
-
-# trained on data V2 accuracy: 96.2
-# trained on data V1 accuracy: 95.5
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/svdf/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 20000,20000,20000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 80 \
@@ -288,17 +295,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/loc
 
 
 # lstm_peep =====================
-
-# trained on data V2 accuracy non stream: 95.6; stream: 41.3
-# trained on data V1 accuracy non stream: 95.2; stream: 38.4
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/lstm_peep/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -306,6 +309,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 lstm \
 --lstm_units 500 \
 --return_sequences 0 \
@@ -313,7 +322,8 @@ lstm \
 --num_proj 200 \
 --dropout1 0.3 \
 --units1 '' \
---act1 ''
+--act1 '' \
+--stateful 0
 
 # non stream latency[us]: 11934
 adb shell rm -f /data/local/tmp/model.tflite
@@ -329,16 +339,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/loc
 
 
 # lstm_peep_state =====================
-
-# trained on data V2 accuracy non stream: 95.2; stream: 95.1
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/lstm_peep_state/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -346,6 +353,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 lstm \
 --lstm_units 500 \
 --return_sequences 0 \
@@ -370,17 +383,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/loc
 
 
 # lstm =====================
-
-# trained on data V2 accuracy: 95.2; stream: 66.7
-# trained on data V1 accuracy: 94.8; stream: 66.5
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/lstm/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -388,6 +397,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 lstm \
 --lstm_units 360 \
 --return_sequences 0 \
@@ -395,7 +410,8 @@ lstm \
 --num_proj -1 \
 --dropout1 0.3 \
 --units1 128,256 \
---act1 "'linear','relu'"
+--act1 "'linear','relu'" \
+--stateful 0
 
 # non stream latency[us]: 11948
 adb shell rm -f /data/local/tmp/model.tflite
@@ -411,16 +427,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/loc
 
 
 # lstm_state =====================
-
-# trained on data V2 accuracy: 95.1; stream: 94.8
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/lstm_state/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -428,6 +441,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 lstm \
 --lstm_units 360 \
 --return_sequences 0 \
@@ -452,17 +471,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/loc
 
 
 # gru =====================
-
-# trained on data V2 accuracy: 96.1; stream: 72.7
-# trained on data V1 accuracy: 95.6; stream: 70.9
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/gru/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -470,12 +485,19 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 gru \
 --gru_units 400 \
 --return_sequences 0 \
 --dropout1 0.1 \
 --units1 128,256 \
---act1 "'linear','relu'"
+--act1 "'linear','relu'" \
+--stateful 0
 
 # non stream latency[us]: 11280
 adb shell rm -f /data/local/tmp/model.tflite
@@ -491,16 +513,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/loc
 
 
 # gru_state =====================
-
-# trained on data V2 accuracy: 96.0; stream: 95.9
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/gru_state/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 15000,15000,15000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -508,6 +527,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 gru \
 --gru_units 400 \
 --return_sequences 0 \
@@ -530,17 +555,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/loc
 
 
 # cnn =====================
-
-# trained on data V2 accuracy: 94.9
-# trained on data V1 accuracy: 94.7
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/cnn/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -548,6 +569,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 cnn \
 --cnn_filters '64,64,64,64,128,64,128' \
 --cnn_kernel_size '(3,3),(5,3),(5,3),(5,3),(5,2),(5,1),(10,1)' \
@@ -572,17 +599,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model --graph=/data/local/tmp/mod
 
 
 # cnn_stride =====================
-
-# trained on data V2 accuracy: 94.4
-# trained on data V1 accuracy: 94.3
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/cnn_stride/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -590,6 +613,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 cnn \
 --cnn_filters '64,64,64,128,128,128,128' \
 --cnn_kernel_size '(3,3),(3,3),(3,3),(3,3),(3,3),(3,1),(3,1)' \
@@ -608,17 +637,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model --graph=/data/local/tmp/mod
 
 
 # crnn =====================
-
-# trained on data V2 accuracy: non stream 96.1; stream 69.1
-# trained on data V1 accuracy: non stream 96.1; stream 68.5
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/crnn/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -626,6 +651,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 crnn \
 --cnn_filters '16,16' \
 --cnn_kernel_size '(3,3),(5,3)' \
@@ -636,7 +667,8 @@ crnn \
 --return_sequences 0 \
 --dropout1 0.1 \
 --units1 '128,256' \
---act1 "'linear','relu'"
+--act1 "'linear','relu'" \
+--stateful 0
 
 
 # non stream latency[us]: 9441.95
@@ -653,16 +685,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/loc
 
 
 # crnn_state =====================
-
-# trained on data V2 accuracy: 95.6; stream: 95.3
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/crnn_state/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -670,6 +699,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 crnn \
 --cnn_filters '16,16' \
 --cnn_kernel_size '(3,3),(5,3)' \
@@ -685,17 +720,13 @@ crnn \
 
 
 # dnn =====================
-
-# trained on data V2 accuracy: 89.7
-# trained on data V1 accuracy: 88.5
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/dnn/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -703,6 +734,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 dnn \
 --units1 '64,128' \
 --act1 "'relu','relu'" \
@@ -726,17 +763,13 @@ adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/loc
 
 
 # att_rnn =====================
-
-# trained on data V2 accuracy: 96.9
-# trained on data V1 accuracy: 96.2
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/att_rnn/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -744,6 +777,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 att_rnn \
 --cnn_filters '10,1' \
 --cnn_kernel_size '(5,1),(5,1)' \
@@ -763,17 +802,13 @@ adb push $MODELS_PATH/att_rnn/tflite_non_stream/non_stream.tflite /data/local/tm
 adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/local/tmp/model.tflite --warmup_runs=1 --num_threads=1 --num_runs=1000 > $MODELS_PATH/att_rnn/tflite_non_stream/non_stream.tflite.benchmark
 
 # att_mh_rnn =====================
-
-# trained on data V2 accuracy: 97.3
-# trained on data V1 accuracy: 96.5
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/att_mh_rnn/ \
---mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--mel_upper_edge_hertz 8000 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
@@ -781,6 +816,12 @@ python -m kws_streaming.train.model_train_eval \
 --resample 0.15 \
 --alsologtostderr \
 --train 0 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 att_mh_rnn \
 --cnn_filters '10,1' \
 --cnn_kernel_size '(5,1),(5,1)' \
@@ -802,26 +843,61 @@ adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/loc
 adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/local/tmp/model.tflite --warmup_runs=1 --num_threads=1 --num_runs=1000 --enable_op_profiling=true > $MODELS_PATH/att_mh_rnn/tflite_non_stream/non_stream.tflite.benchmark.profile
 
 
+# tc_resnet =====================
+$CMD_TRAIN \
+--data_url '' \
+--data_dir $DATA_PATH/ \
+--train_dir $MODELS_PATH/tc_resnet/ \
+--mel_upper_edge_hertz 7000 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.1,0.05,0.02,0.01 \
+--window_size_ms 40.0 \
+--window_stride_ms 20.0 \
+--mel_num_bins 40 \
+--dct_num_features 40 \
+--resample 0.15 \
+--alsologtostderr \
+--train 0 \
+--optimizer 'mom' \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
+tc_resnet \
+--channels '50, 50, 50, 50, 50, 72, 72' \
+--debug_2d 0 \
+--pool_size '' \
+--pool_stride 0 \
+--bn_momentum 0.997 \
+--bn_center 1 \
+--bn_scale 1 \
+--bn_renorm 0 \
+--dropout 0.2
+
 
 # dnn_raw =====================
-
-# trained on data V2 accuracy: 81.2
-# trained on data V1 accuracy: 79.8
-#bazel run -c opt --copt=-mavx2 kws_streaming/train:model_train_eval -- \
-python -m kws_streaming.train.model_train_eval \
+$CMD_TRAIN \
 --data_url '' \
 --data_dir $DATA_PATH/ \
 --train_dir $MODELS_PATH/dnn_raw/ \
 --mel_upper_edge_hertz 7000 \
---how_many_training_steps 10000,10000,10000 \
---learning_rate 0.0005,0.0001,0.00002 \
+--how_many_training_steps 20000,20000,20000,20000 \
+--learning_rate 0.001,0.0005,0.0001,0.00002 \
 --window_size_ms 40.0 \
 --window_stride_ms 20.0 \
 --mel_num_bins 40 \
 --dct_num_features 20 \
 --resample 0.15 \
 --alsologtostderr \
---train 0 \
+--train 1 \
+--lr_schedule 'exp' \
+--use_spec_augment 1 \
+--time_masks_number 2 \
+--time_mask_max_size 10 \
+--frequency_masks_number 2 \
+--frequency_mask_max_size 5 \
 dnn_raw \
 --units1 '64,128' \
 --act1 "'relu','relu'" \
@@ -842,3 +918,27 @@ adb shell rm -f /data/local/tmp/model.tflite
 adb push $MODELS_PATH/dnn_raw/tflite_stream_state_external/stream_state_external.tflite /data/local/tmp/model.tflite
 adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/local/tmp/model.tflite --warmup_runs=1 --num_threads=1 --num_runs=1000 > $MODELS_PATH/dnn_raw/tflite_stream_state_external/stream_state_external.tflite.benchmark
 adb shell taskset f0 /data/local/tmp/benchmark_model_plus_flex --graph=/data/local/tmp/model.tflite --warmup_runs=1 --num_threads=1 --num_runs=1000 --enable_op_profiling=true > $MODELS_PATH/dnn_raw/tflite_stream_state_external/stream_state_external.tflite.benchmark.profile
+
+# confirm that unit tests are working:
+python -m kws_streaming.data.input_data_test
+python -m kws_streaming.layers.conv2d_test
+python -m kws_streaming.layers.dataframe_test
+python -m kws_streaming.layers.dct_test
+python -m kws_streaming.layers.dense_test
+python -m kws_streaming.layers.depthwiseconv1d_test
+python -m kws_streaming.layers.flatten_test
+python -m kws_streaming.layers.gru_test
+python -m kws_streaming.layers.lstm_test
+python -m kws_streaming.layers.magnitude_rdft_mel_test
+python -m kws_streaming.layers.magnitude_rdft_test
+python -m kws_streaming.layers.mel_spectrogram_test
+python -m kws_streaming.layers.mel_table_test
+python -m kws_streaming.layers.non_scaling_dropout_test
+python -m kws_streaming.layers.preemphasis_test
+python -m kws_streaming.layers.speech_features_test
+python -m kws_streaming.layers.spectrogram_augment_test
+python -m kws_streaming.layers.svdf_test
+python -m kws_streaming.layers.stream_test
+python -m kws_streaming.train.train_test
+python -m kws_streaming.train.base_parser_test
+python -m kws_streaming.models.utils_test

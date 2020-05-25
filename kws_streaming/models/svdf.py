@@ -14,7 +14,6 @@
 # limitations under the License.
 
 """SVDF model with Mel spectrum and fully connected layers."""
-
 from kws_streaming.layers import speech_features
 from kws_streaming.layers import svdf
 from kws_streaming.layers.compat import tf
@@ -40,7 +39,7 @@ def model_parameters(parser_nn):
   parser_nn.add_argument(
       '--svdf_act',
       type=str,
-      default='relu,selu,selu,selu,selu,selu',
+      default="'relu','relu','relu','relu','relu','relu'",
       help='Number of units in the first set of hidden layers',
   )
   parser_nn.add_argument(
@@ -52,7 +51,7 @@ def model_parameters(parser_nn):
   parser_nn.add_argument(
       '--svdf_dropout',
       type=str,
-      default='0.5,0.5,0.5,0.5,0.5,0.5',
+      default='0.0,0.0,0.0,0.0,0.0,0.0',
       help='Percentage of data dropped in svdf layers',
   )
   parser_nn.add_argument(
@@ -64,7 +63,7 @@ def model_parameters(parser_nn):
   parser_nn.add_argument(
       '--dropout1',
       type=float,
-      default=0.5,
+      default=0.0,
       help='Percentage of data dropped after svdf layers',
   )
   parser_nn.add_argument(
@@ -99,18 +98,7 @@ def model(flags):
       shape=(flags.desired_samples,), batch_size=flags.batch_size)
 
   net = speech_features.SpeechFeatures(
-      frame_size_ms=flags.window_size_ms,
-      frame_step_ms=flags.window_stride_ms,
-      sample_rate=flags.sample_rate,
-      use_tf_fft=flags.use_tf_fft,
-      preemph=flags.preemph,
-      window_type=flags.window_type,
-      mel_num_bins=flags.mel_num_bins,
-      mel_lower_edge_hertz=flags.mel_lower_edge_hertz,
-      mel_upper_edge_hertz=flags.mel_upper_edge_hertz,
-      mel_non_zero_only=flags.mel_non_zero_only,
-      fft_magnitude_squared=flags.fft_magnitude_squared,
-      dct_num_features=flags.dct_num_features)(
+      speech_features.SpeechFeatures.get_params(flags))(
           input_audio)
 
   for i, (units1, memory_size, units2, dropout, activation) in enumerate(

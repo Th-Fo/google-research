@@ -20,7 +20,7 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import tensorflow.compat.v1 as tf
+import tensorflow as tf  # pylint: disable=g-explicit-tensorflow-version-import
 import tensorflow_datasets.public_api as tfds
 
 URL = "http://ufldl.stanford.edu/housenumbers/"
@@ -72,15 +72,12 @@ class SvhnCroppedSmall(tfds.core.GeneratorBasedBuilder):
     return [
         tfds.core.SplitGenerator(
             name=tfds.Split.TRAIN,
-            num_shards=10,
             gen_kwargs=dict(filepath=output_files["train"],)),
         tfds.core.SplitGenerator(
             name=tfds.Split.VALIDATION,
-            num_shards=10,
             gen_kwargs=dict(filepath=output_files["val"],)),
         tfds.core.SplitGenerator(
             name=tfds.Split.TEST,
-            num_shards=1,
             gen_kwargs=dict(filepath=output_files["test"],)),
     ]
 
@@ -102,6 +99,6 @@ class SvhnCroppedSmall(tfds.core.GeneratorBasedBuilder):
       label = label.reshape(())
       record = {
           "image": image,
-          "label": label % 10,  # digit 0 is saved as 0 (instead of 10)
+          "label": label % 5,  # We use five classes, with labels 0-4.
       }
       yield i, record

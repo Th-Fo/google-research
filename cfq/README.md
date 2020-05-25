@@ -5,7 +5,7 @@ the Compositional Freebase Questions (CFQ) dataset.
 
 The dataset can be downloaded from the following URL:
 
-[Download the CFQ dataset](https://storage.cloud.google.com/cfq_dataset/cfq.tar.gz)
+[Download the CFQ dataset](https://storage.cloud.google.com/cfq_dataset/cfq1.1.tar.gz)
 
 The dataset and details about its construction and use are described in this ICLR 2020 paper: [Measuring Compositional Generalization: A Comprehensive Method on Realistic Data](https://openreview.net/forum?id=SygcCnNKwr).
 
@@ -21,7 +21,7 @@ We recommend getting [pip3](https://pip.pypa.io/en/stable/) and then running the
 following command, which will install all required libraries in one go:
 
 ```shell
-sudo pip3 install absl-py tensorflow tensor2tensor
+sudo pip3 install -r requirements.txt
 ```
 
 ## Training and evaluating a model
@@ -61,3 +61,103 @@ splits. Accuracies vary between 5% and 37% over splits and architectures:
 | MCD1  | 28.9 +/- 1.8 | 34.9 +/- 1.1 | 37.4 +/- 2.2 |
 | MCD2  |  5.0 +/- 0.8 |  8.2 +/- 0.3 |  8.1 +/- 1.6 |
 | MCD3  | 10.8 +/- 0.6 | 10.6 +/- 1.1 | 11.3 +/- 0.3 |
+
+## SCAN MCD splits
+We also publish the SCAN MCD splits from our paper. In order to run over those
+please download the dataset from the [original source](https://github.com/brendenlake/SCAN),
+set `dataset_local_path` to point to the tasks.txt file and adjust `split_path`
+to point to one of the mcd.json files from our [scan archive](https://storage.cloud.google.com/cfq_dataset/scan-splits.tar.gz).
+
+## Tensorflow datasets
+
+Our dataset and splits are also part of [TensorFlow Datasets](https://www.tensorflow.org/datasets)
+(as of v2.1.0). Using the data is as simple as:
+
+```python
+import tensorflow_datasets as tfds
+data = tfds.load('cfq/mcd1')
+```
+
+## License
+
+CFQ is released under the [CC-BY license](https://creativecommons.org/licenses/by/4.0/).
+
+## Dataset Metadata
+
+The following table is necessary for this dataset to be indexed by search
+engines such as <a href="https://g.co/datasetsearch">Google Dataset Search</a>.
+<div itemscope itemtype="http://schema.org/Dataset">
+<table>
+  <tr>
+    <th>property</th>
+    <th>value</th>
+  </tr>
+  <tr>
+    <td>name</td>
+    <td><code itemprop="name">Compositional Freebase Questions</code></td>
+  </tr>
+  <tr>
+    <td>alternateName</td>
+    <td><code itemprop="alternateName">cfq</code></td>
+  </tr>
+  <tr>
+    <td>url</td>
+    <td><code itemprop="url">https://github.com/google-research/google-research/tree/master/cfq</code></td>
+  </tr>
+  <tr>
+    <td>description</td>
+    <td><code itemprop="description">The Compositional Freebase Questions (CFQ)
+      is a dataset that is specifically designed to measure compositional
+      generalization. CFQ is a simple yet realistic, large dataset of natural
+      language questions and answers that also provides for each question a
+      corresponding SPARQL query against the Freebase knowledge base. This means
+      that CFQ can also be used for semantic parsing.</code></td>
+  </tr>
+  <tr>
+    <td>provider</td>
+    <td>
+      <div itemscope itemtype="http://schema.org/Organization" itemprop="provider">
+        <table>
+          <tr>
+            <th>property</th>
+            <th>value</th>
+          </tr>
+          <tr>
+            <td>name</td>
+            <td><code itemprop="name">Google</code></td>
+          </tr>
+          <tr>
+            <td>sameAs</td>
+            <td><code itemprop="sameAs">https://en.wikipedia.org/wiki/Google</code></td>
+          </tr>
+        </table>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td>license</td>
+    <td>
+      <div itemscope itemtype="http://schema.org/CreativeWork" itemprop="license">
+        <table>
+          <tr>
+            <th>property</th>
+            <th>value</th>
+          </tr>
+          <tr>
+            <td>name</td>
+            <td><code itemprop="name">CC BY-SA 3.0</code></td>
+          </tr>
+          <tr>
+            <td>url</td>
+            <td><code itemprop="url">https://creativecommons.org/licenses/by-sa/3.0/</code></td>
+          </tr>
+        </table>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td>citation</td>
+    <td><code itemprop="citation">Daniel Keysers et al. "Measuring Compositional Generalization: A Comprehensive Method on Realistic Data" (2020). https://openreview.net/pdf?id=SygcCnNKwr</code></td>
+  </tr>
+</table>
+</div>

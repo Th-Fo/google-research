@@ -16,76 +16,77 @@
 """Tests for kws_streaming.models.utils."""
 
 from absl import flags
+from absl.testing import parameterized
 from kws_streaming.layers.compat import tf
 from kws_streaming.layers.compat import tf1
 from kws_streaming.layers.modes import Modes
-from kws_streaming.models import dnn
+from kws_streaming.models import model_params
+from kws_streaming.models import models
 from kws_streaming.models import utils
+from kws_streaming.train import model_flags
+tf1.disable_eager_execution()
 
 FLAGS = flags.FLAGS
 
 
-class Flags(object):  # dummy class for creating tmp flags structure
-  pass
-
-
-class UtilsTest(tf.test.TestCase):
+# two models tested per test to reduce test latency
+class UtilsTest(tf.test.TestCase, parameterized.TestCase):
 
   def setUp(self):
     super(UtilsTest, self).setUp()
     tf1.reset_default_graph()
-    self.sess = tf1.Session()
+    config = tf1.ConfigProto()
+    config.gpu_options.allow_growth = True
+    self.sess = tf1.Session(config=config)
     tf1.keras.backend.set_session(self.sess)
 
-    self.flags = Flags()
-    self.flags.desired_samples = 16000
-    self.flags.window_size_ms = 30.0
-    self.flags.window_stride_ms = 20.0
-    self.flags.sample_rate = 16000.0
-    self.flags.window_stride_samples = 320
-    self.flags.window_size_samples = 480
-    self.flags.label_count = 3
-    self.flags.preemph = 0.0
-    self.flags.window_type = 'hann'
-    self.flags.mel_num_bins = 40
-    self.flags.mel_lower_edge_hertz = 20
-    self.flags.mel_upper_edge_hertz = 4000
-    self.flags.fft_magnitude_squared = False
-    self.flags.dct_num_features = 10
-    self.flags.use_tf_fft = False
-    self.flags.units1 = '32'
-    self.flags.act1 = "'relu'"
-    self.flags.pool_size = 2
-    self.flags.strides = 2
-    self.flags.dropout1 = 0.1
-    self.flags.units2 = '256,256'
-    self.flags.act2 = "'relu','relu'"
-    self.flags.train_dir = FLAGS.test_tmpdir
-    self.flags.mel_non_zero_only = 1
-    self.flags.batch_size = 1
+  def testToNonStreamInferenceTFandTFLite(self, model_name='svdf'):
+    """Validate that model can be converted to non stream inference mode."""
+    params = model_params.HOTWORD_MODEL_PARAMS[model_name]
+    params = model_flags.update_flags(params)
 
-    self.model = dnn.model(self.flags)
-    self.model.summary()
+    # create model
+    model = models.MODELS[params.model_name](params)
 
-  def test_to_streaming_inference(self):
-    """Validate that model can be converted to any streaming mode with TF."""
-    model_non_streaming = utils.to_streaming_inference(
-        self.model, self.flags, Modes.NON_STREAM_INFERENCE)
-    self.assertTrue(model_non_streaming)
-    model_streaming_ext_state = utils.to_streaming_inference(
-        self.model, self.flags, Modes.STREAM_EXTERNAL_STATE_INFERENCE)
-    self.assertTrue(model_streaming_ext_state)
-    model_streaming_int_state = utils.to_streaming_inference(
-        self.model, self.flags, Modes.STREAM_INTERNAL_STATE_INFERENCE)
-    self.assertTrue(model_streaming_int_state)
+    # convert TF non streaming model to TF non streaming inference model
+    # it will disable dropouts
+    self.assertTrue(utils.to_streaming_inference(
+        model, params, Modes.NON_STREAM_INFERENCE))
 
-  def test_model_to_tflite(self):
-    """TFLite supports stateless graphs."""
-    self.assertTrue(utils.model_to_tflite(self.sess, self.model, self.flags))
+    # convert TF non streaming model to TFLite non streaming inference
+    self.assertTrue(
+        utils.model_to_tflite(self.sess, model, params,
+                              Modes.NON_STREAM_INFERENCE))
 
-  def test_model_to_saved(self):
+  def testToStreamInferenceModeTFandTFLite(self, model_name='gru'):
+    """Validate that model can be converted to any streaming inference mode."""
+    params = model_params.HOTWORD_MODEL_PARAMS[model_name]
+    params = model_flags.update_flags(params)
+
+    # create model
+    model = models.MODELS[params.model_name](params)
+
+    # convert TF non streaming model to TFLite streaming inference
+    # with external states
+    self.assertTrue(utils.model_to_tflite(
+        self.sess, model, params, Modes.STREAM_EXTERNAL_STATE_INFERENCE))
+
+    # convert TF non streaming model to TF streaming with external states
+    self.assertTrue(utils.to_streaming_inference(
+        model, params, Modes.STREAM_EXTERNAL_STATE_INFERENCE))
+
+    # convert TF non streaming model to TF streaming with internal states
+    self.assertTrue(utils.to_streaming_inference(
+        model, params, Modes.STREAM_INTERNAL_STATE_INFERENCE))
+
+  def test_model_to_saved(self, model_name='dnn'):
     """SavedModel supports both stateless and stateful graphs."""
-    utils.model_to_saved(self.model, self.flags, FLAGS.test_tmpdir)
+    params = model_params.HOTWORD_MODEL_PARAMS[model_name]
+    params = model_flags.update_flags(params)
+
+    # create model
+    model = models.MODELS[params.model_name](params)
+    utils.model_to_saved(model, params, FLAGS.test_tmpdir)
 
   def testNextPowerOfTwo(self):
     self.assertEqual(utils.next_power_of_two(11), 16)
