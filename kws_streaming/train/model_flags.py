@@ -18,7 +18,6 @@
 import math
 import os
 import kws_streaming.data.input_data as input_data
-from kws_streaming.layers.modes import Modes
 from kws_streaming.models import utils
 
 MS_PER_SECOND = 1000  # milliseconds in 1 second
@@ -74,7 +73,6 @@ def update_flags(flags):
   fingerprint_size = fingerprint_width * spectrogram_length
 
   upd_flags = flags
-  upd_flags.mode = Modes.TRAINING
   upd_flags.label_count = label_count
   upd_flags.desired_samples = desired_samples
   upd_flags.window_size_samples = window_size_samples
@@ -83,6 +81,10 @@ def update_flags(flags):
   upd_flags.fingerprint_width = fingerprint_width
   upd_flags.fingerprint_size = fingerprint_size
   upd_flags.average_window_width = average_window_width
+  if upd_flags.fft_magnitude_squared in (0, 1):
+    upd_flags.fft_magnitude_squared = bool(upd_flags.fft_magnitude_squared)
+  else:
+    raise ValueError('Non boolean value %d' % upd_flags.fft_magnitude_squared)
 
   # summary logs for TensorBoard
   upd_flags.summaries_dir = os.path.join(flags.train_dir, 'logs/')

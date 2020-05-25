@@ -31,32 +31,39 @@ class LossyWeight : public Sketch {
  public:
   LossyWeight(uint window_size, uint hash_count, uint hash_size);
 
-  virtual ~LossyWeight() {}
+  LossyWeight(const LossyWeight& lw);
 
-  virtual void Reset();
+  ~LossyWeight() override = default;
 
-  virtual void Add(uint item, float delta);
+  void Reset() override;
 
-  virtual void ReadyToEstimate() { MergeCounters(); }
+  void Add(uint item, float delta) override;
 
-  virtual float Estimate(uint item) const;
+  void ReadyToEstimate() override;
 
-  virtual void HeavyHitters(float threshold, std::vector<uint>* items) const;
+  float Estimate(uint item) const override;
 
-  virtual unsigned int Size() const;
+  std::vector<uint> HeavyHitters(float threshold) const override;
 
-  virtual bool Compatible(const Sketch& other_sketch) const;
+  unsigned int Size() const override;
 
-  virtual void Merge(const Sketch& other_sketch);
+  bool Compatible(const Sketch& other_sketch) const override;
+
+  void Merge(const Sketch& other_sketch) override;
 
  private:
-  uint window_size_;
-  uint accumulated_counters_;
+  const uint window_size_;
+  uint accumulated_counters_ = 0;
   std::vector<IntFloatPair> counters_;
   CountMinCU cm_;
 
   // Merge duplicate counters in counters_
   void MergeCounters();
+
+  // Discard low frequency items from counters_ into CountMinCU whose freq order
+  // is lower than window_size_. After discarding low frequent items, sort the
+  // counters_ by its item value.
+  void DiscardLowFreqItems();
 };
 
 }  // namespace sketch

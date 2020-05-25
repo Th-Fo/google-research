@@ -14,7 +14,6 @@
 # limitations under the License.
 
 """LSTM with Mel spectrum and fully connected layers."""
-
 from kws_streaming.layers import speech_features
 from kws_streaming.layers.compat import tf
 from kws_streaming.layers.lstm import LSTM
@@ -27,7 +26,7 @@ def model_parameters(parser_nn):
   parser_nn.add_argument(
       '--lstm_units',
       type=str,
-      default='512',
+      default='500',
       help='Output space dimensionality of lstm layer ',
   )
   parser_nn.add_argument(
@@ -40,7 +39,7 @@ def model_parameters(parser_nn):
   parser_nn.add_argument(
       '--stateful',
       type=int,
-      default='0',
+      default='1',
       help='If True, the last state for each sample at index i'
       'in a batch will be used as initial state for the sample '
       'of index i in the following batch',
@@ -48,7 +47,7 @@ def model_parameters(parser_nn):
   parser_nn.add_argument(
       '--num_proj',
       type=str,
-      default='256',
+      default='200',
       help='The output dimensionality for the projection matrices.',
   )
   parser_nn.add_argument(
@@ -60,7 +59,7 @@ def model_parameters(parser_nn):
   parser_nn.add_argument(
       '--dropout1',
       type=float,
-      default=0.1,
+      default=0.3,
       help='Percentage of data dropped',
   )
   parser_nn.add_argument(
@@ -96,18 +95,7 @@ def model(flags):
       shape=(flags.desired_samples,), batch_size=flags.batch_size)
 
   net = speech_features.SpeechFeatures(
-      frame_size_ms=flags.window_size_ms,
-      frame_step_ms=flags.window_stride_ms,
-      sample_rate=flags.sample_rate,
-      use_tf_fft=flags.use_tf_fft,
-      preemph=flags.preemph,
-      window_type=flags.window_type,
-      mel_num_bins=flags.mel_num_bins,
-      mel_lower_edge_hertz=flags.mel_lower_edge_hertz,
-      mel_upper_edge_hertz=flags.mel_upper_edge_hertz,
-      mel_non_zero_only=flags.mel_non_zero_only,
-      fft_magnitude_squared=flags.fft_magnitude_squared,
-      dct_num_features=flags.dct_num_features)(
+      speech_features.SpeechFeatures.get_params(flags))(
           input_audio)
 
   for units, return_sequences, num_proj in zip(

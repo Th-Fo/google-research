@@ -26,19 +26,19 @@ def model_parameters(parser_nn):
   parser_nn.add_argument(
       '--cnn_filters',
       type=str,
-      default='64,64,64,64,64,64,128',
+      default='64,64,64,64,128,64,128',
       help='Number of output filters in the convolution layers',
   )
   parser_nn.add_argument(
       '--cnn_kernel_size',
       type=str,
-      default='(3,3),(5,3),(5,3),(5,3),(5,2),(5,1),(5,1)',
+      default='(3,3),(5,3),(5,3),(5,3),(5,2),(5,1),(10,1)',
       help='Heights and widths of the 2D convolution window',
   )
   parser_nn.add_argument(
       '--cnn_act',
       type=str,
-      default="'relu','selu','selu','selu','selu','selu','selu'",
+      default="'relu','relu','relu','relu','relu','relu','relu'",
       help='Activation function in the convolution layers',
   )
   parser_nn.add_argument(
@@ -68,7 +68,7 @@ def model_parameters(parser_nn):
   parser_nn.add_argument(
       '--act2',
       type=str,
-      default="'linear','selu'",
+      default="'linear','relu'",
       help='Activation function of the last set of hidden layers',
   )
 
@@ -91,18 +91,7 @@ def model(flags):
       shape=(flags.desired_samples,), batch_size=flags.batch_size)
 
   net = speech_features.SpeechFeatures(
-      frame_size_ms=flags.window_size_ms,
-      frame_step_ms=flags.window_stride_ms,
-      sample_rate=flags.sample_rate,
-      use_tf_fft=flags.use_tf_fft,
-      preemph=flags.preemph,
-      window_type=flags.window_type,
-      mel_num_bins=flags.mel_num_bins,
-      mel_lower_edge_hertz=flags.mel_lower_edge_hertz,
-      mel_upper_edge_hertz=flags.mel_upper_edge_hertz,
-      mel_non_zero_only=flags.mel_non_zero_only,
-      fft_magnitude_squared=flags.fft_magnitude_squared,
-      dct_num_features=flags.dct_num_features)(
+      speech_features.SpeechFeatures.get_params(flags))(
           input_audio)
 
   net = tf.keras.backend.expand_dims(net)

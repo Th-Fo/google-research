@@ -14,59 +14,73 @@
 
 #include "countmin.h"
 
+#include <algorithm>
+#include <cmath>
+#include <functional>
+#include <limits>
+#include <memory>
+#include <vector>
+
+#include "absl/algorithm/container.h"
+#include "absl/memory/memory.h"
+#include "absl/random/bit_gen_ref.h"
+#include "absl/random/distributions.h"
+#include "sketch.h"
 #include "utils.h"
-#include "absl/random/random.h"
 
 namespace sketch {
+namespace {
 
-CountMin::CountMin(uint hash_count, uint hash_size)
-    : hash_size_(hash_size), max_item_(0) {
-  hash_a_.resize(hash_count);
-  hash_b_.resize(hash_count);
-  values_.resize(hash_count);
-
+std::vector<uint> GenerateHashes(int hash_count) {
+  std::vector<uint> hashes(hash_count);
   BitGenerator bit_gen;
   absl::BitGenRef& generator = *bit_gen.BitGen();
-  absl::uniform_int_distribution<int> rand_int;
-  for (int i = 0; i < hash_count; ++i) {
-    values_[i].resize(hash_size);
-    hash_a_[i] = rand_int(generator);
-    hash_b_[i] = rand_int(generator);
-  }
+  absl::c_generate(hashes, [&]() { return absl::Uniform<uint>(generator); });
+  return hashes;
 }
+
+}  // namespace
+
+CountMin::CountMin(uint hash_count, uint hash_size)
+    : hash_size_(hash_size),
+      hash_a_(GenerateHashes(hash_count)),
+      hash_b_(GenerateHashes(hash_count)),
+      values_(hash_count, std::vector<float>(hash_size, 0.0)),
+      hash_func_([hash_size](ULONG a, ULONG b, ULONG x) {
+        return Hash(a, b, x, hash_size);
+      }) {}
 
 void CountMin::Reset() {
   max_item_ = 0;
   for (int i = 0; i < values_.size(); ++i) {
-    values_[i].resize(0);
-    values_[i].resize(hash_size_, 0);
+    values_[i] = std::vector<float>(hash_size_, 0);
   }
 }
 
 void CountMin::Add(uint item, float delta) {
   max_item_ = std::max(item, max_item_);
   for (int i = 0; i < values_.size(); ++i) {
-    values_[i][Hash(hash_a_[i], hash_b_[i], item, hash_size_)] += delta;
+    values_[i][hash_func_(hash_a_[i], hash_b_[i], item)] += delta;
   }
 }
 
 float CountMin::Estimate(uint item) const {
-  float result = values_[0][Hash(hash_a_[0], hash_b_[0], item, hash_size_)];
-  for (int i = 1; i < values_.size(); ++i) {
-    result = std::min(
-        result, values_[i][Hash(hash_a_[i], hash_b_[i], item, hash_size_)]);
+  float result = std::numeric_limits<float>::max();
+  for (int i = 0; i < values_.size(); ++i) {
+    result =
+        std::min(result, values_[i][hash_func_(hash_a_[i], hash_b_[i], item)]);
   }
   return result;
 }
 
-void CountMin::HeavyHitters(float threshold, std::vector<uint>* items) const {
-  items->resize(0);
-  items->reserve(max_item_);
+std::vector<uint> CountMin::HeavyHitters(float threshold) const {
+  std::vector<uint> items;
   for (uint i = 0; i <= max_item_; ++i) {
     if (Estimate(i) > threshold) {
-      items->push_back(i);
+      items.push_back(i);
     }
   }
+  return items;
 }
 
 uint CountMin::Size() const {
@@ -80,12 +94,7 @@ bool CountMin::Compatible(const Sketch& other_sketch) const {
   const CountMin* other = dynamic_cast<const CountMin*>(&other_sketch);
   if (other == nullptr) return false;
   if (hash_size_ != other->hash_size_) return false;
-  if (hash_a_.size() != other->hash_a_.size()) return false;
-  for (int i = 0; i < hash_a_.size(); ++i) {
-    if (hash_a_[i] != other->hash_a_[i]) return false;
-    if (hash_b_[i] != other->hash_b_[i]) return false;
-  }
-  return true;
+  return hash_a_ == other->hash_a_ && hash_b_ == other->hash_b_;
 }
 
 void CountMin::Merge(const Sketch& other_sketch) {
@@ -100,52 +109,101 @@ void CountMin::Merge(const Sketch& other_sketch) {
 }
 
 void CountMinCU::Add(uint item, float delta) {
-  Update(item, Estimate(item) + delta);
+  // Update(item, Estimate(item) + delta);
+  // Expanded this out, because we don't want to compute hashes twice.
+  max_item_ = std::max(item, max_item_);
+  float result = std::numeric_limits<float>::max();
+  for (int i = 0; i < values_.size(); ++i) {
+    uint idx = scratch_[i] = hash_func_(hash_a_[i], hash_b_[i], item);
+    result = std::min(result, values_[i][idx]);
+  }
+  result += delta;
+  for (int i = 0; i < values_.size(); ++i) {
+    uint idx = scratch_[i];
+    values_[i][idx] = std::max(values_[i][idx], result);
+  }
+}
+
+uint CountMinCU::Size() const {
+  return sizeof(CountMinCU) +
+      (hash_b_.capacity() + hash_a_.capacity()
+       + scratch_.capacity()) * sizeof(uint) +
+      values_.capacity() * (sizeof(values_[0]) +
+                            values_[0].capacity() * sizeof(float));
 }
 
 void CountMinCU::BatchAdd(const std::vector<IntFloatPair>& item_deltas) {
   std::vector<IntFloatPair> updates;
   updates.reserve(item_deltas.size());
-  for (const auto & item_delta : item_deltas) {
-    updates.push_back(std::make_pair(
-        item_delta.first, Estimate(item_delta.first) + item_delta.second));
+  for (const auto& [item, delta] : item_deltas) {
+    updates.emplace_back(item, Estimate(item) + delta);
   }
-  for (const auto &update : updates) {
-    Update(update.first, update.second);
+  for (const auto& [item, value] : updates) {
+    Update(item, value);
   }
 }
 
 void CountMinCU::Update(uint item, float value) {
   max_item_ = std::max(item, max_item_);
   for (int i = 0; i < values_.size(); ++i) {
-    uint ind = Hash(hash_a_[i], hash_b_[i], item, hash_size_);
-    values_[i][ind] = std::max(values_[i][ind], value);
+    uint idx = hash_func_(hash_a_[i], hash_b_[i], item);
+    values_[i][idx] = std::max(values_[i][idx], value);
   }
 }
 
-CountMinHierarchical::CountMinHierarchical(const CountMinHierarchical& other) {
-  lgN_ = other.lgN_;
-  granularity_ = other.granularity_;
-  total_ = other.total_;
-  levels_ = other.levels_;
-  exact_counts_ = other.exact_counts_;
+std::unique_ptr<CountMin> CountMin::CreateCM(uint hash_count, uint hash_size) {
+  return absl::make_unique<CountMin>(CountMin(hash_count, hash_size));
+}
 
+std::unique_ptr<CountMin> CountMin::CreateCopy() const {
+  return absl::WrapUnique<CountMin>(new CountMin(*this));
+}
+
+CountMinCU::CountMinCU(uint hash_count, uint hash_size)
+    : CountMin(hash_count, hash_size), scratch_(hash_count) {}
+
+std::unique_ptr<CountMin> CountMinCU::CreateCM_CU(uint hash_count,
+                                                  uint hash_size) {
+  return absl::make_unique<CountMinCU>(CountMinCU(hash_count, hash_size));
+}
+
+std::unique_ptr<CountMin> CountMinCU::CreateCopy() const {
+  return absl::WrapUnique(new CountMinCU(*this));
+}
+
+CountMinHierarchical::CountMinHierarchical(uint hash_count, uint hash_size,
+                                           uint lgN, uint granularity) {
+  Initialize(hash_count, hash_size, lgN, granularity, &CountMin::CreateCM);
+}
+
+CountMinHierarchical::CountMinHierarchical(
+    uint hash_count, uint hash_size, uint lgN, uint granularity,
+    std::function<std::unique_ptr<CountMin>(uint, uint)> create_sketch) {
+  Initialize(hash_count, hash_size, lgN, granularity, create_sketch);
+}
+
+CountMinHierarchical::CountMinHierarchical(const CountMinHierarchical& other)
+    : lgN_(other.lgN_),
+      levels_(other.levels_),
+      granularity_(other.granularity_),
+      total_(other.total_),
+      exact_counts_(other.exact_counts_) {
   sketches_.reserve(other.sketches_.size());
-  for (int j = 0; j < other.sketches_.size(); ++j) {
-    sketches_.push_back(other.sketches_[j]->CreateCopy());
+  for (const auto& other_sketch : other.sketches_) {
+    sketches_.push_back(other_sketch->CreateCopy());
   }
 }
 
 void CountMinHierarchical::Initialize(
     uint hash_count, uint hash_size, uint lgN, uint granularity,
-    std::unique_ptr<CountMin> (*CreateSketch)(uint, uint)) {
+    std::function<std::unique_ptr<CountMin>(uint, uint)> create_sketch) {
   lgN_ = lgN;
   granularity_ = granularity;
   total_ = 0;
   levels_ = static_cast<int>(ceil(static_cast<float>(lgN) /
                                   static_cast<float>(granularity)));
 
-  uint exact_count_size = log2int(hash_count * hash_size);
+  uint exact_count_size = floor(log2(hash_count * hash_size));
   exact_counts_.resize(exact_count_size);
   int j = 1;
   for (int i = exact_counts_.size() - 1; i >= 0; --i) {
@@ -154,7 +212,7 @@ void CountMinHierarchical::Initialize(
   }
   sketches_.reserve(levels_ - exact_count_size);
   for (int j = exact_count_size; j < levels_; ++j) {
-    sketches_.push_back((*CreateSketch)(hash_count, hash_size));
+    sketches_.push_back(create_sketch(hash_count, hash_size));
   }
 }
 
@@ -165,11 +223,10 @@ void CountMinHierarchical::Reset() {
       exact_counts_[i][j] = 0;
     }
   }
-  for (int i = 0; i < sketches_.size(); ++i) {
-    sketches_[i]->Reset();
+  for (auto& sketch : sketches_) {
+    sketch->Reset();
   }
 }
-
 
 void CountMinHierarchical::Add(uint item, float delta) {
   total_ += delta;
@@ -181,6 +238,16 @@ void CountMinHierarchical::Add(uint item, float delta) {
     }
     item >>= granularity_;
   }
+}
+
+float CountMinHierarchical::Estimate(uint item) const {
+  return sketches_[0]->Estimate(item);
+}
+
+std::vector<uint> CountMinHierarchical::HeavyHitters(float threshold) const {
+  std::vector<uint> items;
+  HeavyHittersRecursive(levels_, 0, threshold, &items);
+  return items;
 }
 
 uint CountMinHierarchical::Size() const {
@@ -299,5 +366,10 @@ uint CountMinHierarchical::Quantile(float frac) const {
   return (FindRange(total_ * frac, true) +
           FindRange(total_ * (1 - frac), false)) / 2;
 }
+
+CountMinHierarchicalCU::CountMinHierarchicalCU(uint hash_count, uint hash_size,
+                                               uint lgN, uint granularity)
+    : CountMinHierarchical(hash_count, hash_size, lgN, granularity,
+                           &CountMinCU::CreateCM_CU) {}
 
 }  // namespace sketch

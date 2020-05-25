@@ -14,7 +14,6 @@
 # limitations under the License.
 
 """DNN model with Mel spectrum and fully connected layers."""
-
 from kws_streaming.layers import speech_features
 from kws_streaming.layers.compat import tf
 from kws_streaming.layers.stream import Stream
@@ -24,10 +23,10 @@ from kws_streaming.models.utils import parse
 def model_parameters(parser_nn):
   """DNN model parameters."""
   parser_nn.add_argument(
-      '--units1', type=str, default='32',
+      '--units1', type=str, default='64,128',
       help='List of units in the first set of hidden layers',)
   parser_nn.add_argument(
-      '--act1', type=str, default="'relu'",
+      '--act1', type=str, default="'relu','relu'",
       help='List of activation functions of the first set hidden layers',)
   parser_nn.add_argument(
       '--pool_size', type=int, default=2,
@@ -39,10 +38,10 @@ def model_parameters(parser_nn):
       '--dropout1', type=float, default=0.1,
       help='Percentage of data dropped',)
   parser_nn.add_argument(
-      '--units2', type=str, default='256,256',
+      '--units2', type=str, default='128,256',
       help='List of units in the second set of hidden layers',)
   parser_nn.add_argument(
-      '--act2', type=str, default="'relu','relu'",
+      '--act2', type=str, default="'linear','relu'",
       help='List of activation functions of the second set of hidden layers',)
 
 
@@ -65,18 +64,7 @@ def model(flags):
       shape=(flags.desired_samples,), batch_size=flags.batch_size)
 
   net = speech_features.SpeechFeatures(
-      frame_size_ms=flags.window_size_ms,
-      frame_step_ms=flags.window_stride_ms,
-      sample_rate=flags.sample_rate,
-      use_tf_fft=flags.use_tf_fft,
-      preemph=flags.preemph,
-      window_type=flags.window_type,
-      mel_num_bins=flags.mel_num_bins,
-      mel_lower_edge_hertz=flags.mel_lower_edge_hertz,
-      mel_upper_edge_hertz=flags.mel_upper_edge_hertz,
-      mel_non_zero_only=flags.mel_non_zero_only,
-      fft_magnitude_squared=flags.fft_magnitude_squared,
-      dct_num_features=flags.dct_num_features)(
+      speech_features.SpeechFeatures.get_params(flags))(
           input_audio)
 
   for units, activation in zip(parse(flags.units1), parse(flags.act1)):

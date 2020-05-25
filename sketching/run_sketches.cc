@@ -16,53 +16,38 @@
 // Report error statistics, time taken and memory used.
 
 #include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <memory>
+#include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gflags/gflags.h>
 
+#include "absl/algorithm/container.h"
+#include "absl/memory/memory.h"
 #include "countmin.h"
+#include "frequent.h"
 #include "lossy_count.h"
 #include "lossy_weight.h"
-#include "frequent.h"
-#include "absl/memory/memory.h"
-#include "absl/random/random.h"
+#include "sketch.h"
+#include "utils.h"
 
 DEFINE_int32(stream_size, 1000000, "Number of items in the stream");
-DEFINE_int32(lg_stream_range, 20, "Stream elements in 0..2^log_stream_range");
+DEFINE_int32(lg_stream_range, 20, "Stream elements in 0..2^lg_stream_range");
 DEFINE_string(distribution, "zipf", "Which distribution?");
 DEFINE_double(zipf_param, 1.1, "Parameter for the Zipf distribution");
 DEFINE_double(epsilon, 0.0001, "Heavy hitter fraction");
+DEFINE_int32(sketch_size, 100000,
+             "Size of sketch, all algorithms get same memory, in bytes");
+DEFINE_double(fallback_fraction, 0.2,
+              "Fraction of memory used for fallback");
 DEFINE_int32(hash_count, 5, "Number of hashes");
-DEFINE_int32(hash_size, 2048, "Size of each hash");
 DEFINE_int32(frequent_size, 2000, "Items in memory for Frequent (Misra-Gries)");
 
 namespace sketch {
-
-void CreateStream(std::vector<IntFloatPair>* data, std::vector<float>* counts) {
-  data->reserve(FLAGS_stream_size);
-  uint stream_range = 1 << FLAGS_lg_stream_range;
-  counts->resize(stream_range);
-  BitGenerator bit_gen;
-  absl::BitGenRef& gen = *bit_gen.BitGen();
-  absl::zipf_distribution<uint> zipf(stream_range, FLAGS_zipf_param, 1.0);
-  ULONG a = absl::uniform_int_distribution<int>(0, stream_range - 1)(gen);
-  ULONG b = absl::uniform_int_distribution<int>(0, stream_range - 1)(gen);
-  for (int i = 0; i < FLAGS_stream_size; ++i) {
-    const auto& k = Hash(a, b, zipf(gen), stream_range);
-    counts->at(k) += 1.0;
-    data->push_back(std::make_pair(k, 1.0));
-  }
-}
-
-int HeavyHittersExact(const std::vector<float>& counts, float thresh) {
-  int res = 0;
-  for (int i = 0; i < counts.size(); ++i) {
-    if (counts[i] > thresh) {
-      res++;
-    }
-  }
-  return res;
-}
 
 struct SketchStats {
   std::string name;
@@ -79,9 +64,8 @@ struct SketchStats {
   ULONG estimate_time;
 };
 
-void TestSketch(Sketch* sketch,
-                const std::vector<IntFloatPair>& data,
-                const std::vector<float>& counts,
+void TestSketch(float threshold, const std::vector<IntFloatPair>& data,
+                const std::vector<float>& counts, Sketch* sketch,
                 SketchStats* stats) {
   auto start = std::chrono::high_resolution_clock::now();
   for (const auto& kv : data) {
@@ -91,8 +75,7 @@ void TestSketch(Sketch* sketch,
   stats->add_time = std::chrono::duration_cast<std::chrono::microseconds>(
       end_add - start).count();
   sketch->ReadyToEstimate();
-  sketch->HeavyHitters(FLAGS_stream_size * FLAGS_epsilon + 1e-6,
-                       &stats->heavy_hitters);
+  stats->heavy_hitters = sketch->HeavyHitters(threshold);
   auto end_hh = std::chrono::high_resolution_clock::now();
   stats->hh_time = std::chrono::duration_cast<std::chrono::microseconds>(
       end_hh - end_add).count();
@@ -114,37 +97,12 @@ void TestSketch(Sketch* sketch,
                          stats->error_mean * stats->error_mean);
 }
 
-void Evaluate(const std::vector<float>& counts,
+void Evaluate(float threshold, const std::vector<float>& counts,
               int heavy_hitters, SketchStats* stats) {
-  float correct = 0;
-  float threshold = FLAGS_stream_size * FLAGS_epsilon + 1e-6;
-  for (uint k : stats->heavy_hitters) {
-    if (counts[k] > threshold) correct += 1;
-  }
-  stats->precision = correct / stats->heavy_hitters.size();
-  stats->recall = correct / heavy_hitters;
-}
-
-void PrintEval(const std::vector<float>& counts,
-               const std::vector<uint>& heavy_hitters,
-               Sketch* s) {
-  float threshold = FLAGS_stream_size * FLAGS_epsilon + 1e-6;
-  int j = 0;
-  for (int i = 0; i < counts.size(); ++i) {
-    if (j < heavy_hitters.size() && i == heavy_hitters[j]) {
-      if (counts[i] > threshold) {
-        printf("Found %d, Actual %.2f, Estimate %.2f\n", i, counts[i],
-               s->Estimate(i));
-      } else {
-        printf("FALSE POSITIVE %d, Actual %.2f, Estimate %.2f\n",
-               i, counts[i], s->Estimate(i));
-      }
-      j++;
-    } else if (counts[i] > threshold) {
-      printf("MISSED %d, Actual %.2f, Estimate %.2f\n", i, counts[i],
-             s->Estimate(i));
-    }
-  }
+  float correct = absl::c_count_if(
+      stats->heavy_hitters, [&](uint k) { return counts[k] > threshold; });
+  stats->precision = static_cast<float>(correct) / stats->heavy_hitters.size();
+  stats->recall = static_cast<float>(correct) / heavy_hitters;
 }
 
 void PrintOutput(const std::vector<SketchStats>& stats) {
@@ -158,53 +116,144 @@ void PrintOutput(const std::vector<SketchStats>& stats) {
   }
 }
 
+int DetermineSketchParam(uint max_sketch_size,
+                         std::function<uint(uint)> compute_sketch_size) {
+  uint lb = 1;
+  uint ub = max_sketch_size;
+  uint val = max_sketch_size / 8;
+
+  while (ub > lb + 1) {
+    uint sketch_size = compute_sketch_size(val);
+    if (sketch_size > max_sketch_size) {
+      ub = val - 1;
+    } else {
+      lb = val;
+    }
+    uint mid = lb + (ub - lb) / 2;  // trick to avoid uint overflow
+    val = std::min(std::max(val / 2, mid), val * 2);
+  }
+  return val;
+}
+
 void TestCounts() {
-  std::vector<IntFloatPair> data;
-  std::vector<float> counts;
-  CreateStream(&data, &counts);
-  int heavy_hitters = HeavyHittersExact(
-      counts, FLAGS_epsilon * FLAGS_stream_size + 1e-6);
+  auto [data, counts] =
+      CreateStream(FLAGS_stream_size, FLAGS_lg_stream_range, FLAGS_zipf_param);
+  const float threshold = FLAGS_epsilon * FLAGS_stream_size + 1e-6;
+  int heavy_hitters = absl::c_count_if(counts, [&](float c) {
+    return c > threshold;
+  });
   printf("\nStream size: %d, Stream range: 2^%d\n", FLAGS_stream_size,
          FLAGS_lg_stream_range);
   printf("There were %d elements above threshold %0.2f, for e = %f\n\n",
          heavy_hitters, FLAGS_epsilon * FLAGS_stream_size, FLAGS_epsilon);
 
-  std::vector<std::pair<std::string, std::unique_ptr<Sketch> > > sketches;
+  std::vector<std::pair<std::string, std::unique_ptr<Sketch>>> sketches;
 
-  sketches.push_back(std::make_pair(
+  const uint cm_hash_size = DetermineSketchParam(
+      FLAGS_sketch_size,
+      [](uint val) -> uint {
+        return CountMin(FLAGS_hash_count, val).Size();
+      });
+  std::cout << "CM params: hash_size " << cm_hash_size << std::endl;
+  sketches.emplace_back(
       "CM", absl::make_unique<CountMin>(
-          CountMin(FLAGS_hash_count, FLAGS_hash_size))));
-  sketches.push_back(std::make_pair(
+          CountMin(FLAGS_hash_count, cm_hash_size)));
+
+  const uint cmcu_hash_size = DetermineSketchParam(
+      FLAGS_sketch_size,
+      [](uint val) -> uint {
+        return CountMinCU(FLAGS_hash_count, val).Size();
+      });
+  std::cout << "CM_CU params: hash_size " << cmcu_hash_size << std::endl;
+  sketches.emplace_back(
       "CM_CU", absl::make_unique<CountMinCU>(
-          CountMinCU(FLAGS_hash_count, FLAGS_hash_size))));
-  sketches.push_back(std::make_pair(
-      "LC", absl::make_unique<LossyCount>(LossyCount(
-          (int)(1.0 / FLAGS_epsilon)))));
-  sketches.push_back(std::make_pair(
-      "LC_FB", absl::make_unique<LossyCount_Fallback>(LossyCount_Fallback(
-          (int)(1.0 / FLAGS_epsilon), FLAGS_hash_count, FLAGS_hash_size))));
-  sketches.push_back(std::make_pair(
-      "LW", absl::make_unique<LossyWeight>(LossyWeight(
-          FLAGS_frequent_size, FLAGS_hash_count, FLAGS_hash_size))));
-  sketches.push_back(std::make_pair(
-      "Freq", absl::make_unique<Frequent>(Frequent(FLAGS_frequent_size))));
-  sketches.push_back(std::make_pair(
-      "Freq_FB", absl::make_unique<Frequent_Fallback>(Frequent_Fallback(
-      FLAGS_frequent_size, FLAGS_hash_count, FLAGS_hash_size))));
-  sketches.push_back(std::make_pair(
+          CountMinCU(FLAGS_hash_count, cmcu_hash_size)));
+
+  const uint cmh_hash_size = DetermineSketchParam(
+      FLAGS_sketch_size,
+      [](uint val) -> uint {
+        return CountMinHierarchical(FLAGS_hash_count, val,
+                                    FLAGS_lg_stream_range).Size();
+      });
+  std::cout << "CMH params: hash_size " << cmh_hash_size << std::endl;
+  sketches.emplace_back(
       "CMH", absl::make_unique<CountMinHierarchical>(CountMinHierarchical(
-          FLAGS_hash_count, FLAGS_hash_size, FLAGS_lg_stream_range))));
-  sketches.push_back(std::make_pair(
+          FLAGS_hash_count, cmh_hash_size, FLAGS_lg_stream_range)));
+
+  const uint cmhcu_hash_size = DetermineSketchParam(
+      FLAGS_sketch_size,
+      [](uint val) -> uint {
+        return CountMinHierarchicalCU(FLAGS_hash_count, val,
+                                      FLAGS_lg_stream_range).Size();
+      });
+  std::cout << "CMH_CU params: hash_size " << cmhcu_hash_size << std::endl;
+  sketches.emplace_back(
       "CMH_CU", absl::make_unique<CountMinHierarchicalCU>(
           CountMinHierarchicalCU(
-              FLAGS_hash_count, FLAGS_hash_size, FLAGS_lg_stream_range))));
+              FLAGS_hash_count, cmhcu_hash_size, FLAGS_lg_stream_range)));
 
+  const uint fb_hash_size = DetermineSketchParam(
+      static_cast<uint>(FLAGS_sketch_size * FLAGS_fallback_fraction),
+      [](uint val) -> uint {
+        return CountMinCU(FLAGS_hash_count, val).Size();
+      });
+
+  const uint lc_window = DetermineSketchParam(
+      FLAGS_sketch_size,
+      [](uint val) -> uint { return LossyCount(val).Size(); });
+  std::cout << "LC params: window_size " << lc_window << std::endl;
+  sketches.emplace_back(
+      "LC", absl::make_unique<LossyCount>(LossyCount(lc_window)));
+
+  const uint lcfb_window = DetermineSketchParam(
+      FLAGS_sketch_size,
+      [fb_hash_size](uint val) -> uint {
+        return LossyCountFallback(val, FLAGS_hash_count,
+                                   fb_hash_size).Size();
+      });
+  std::cout << "LC_FB params: window_size " << lcfb_window
+            << " fallback_hashsize " << fb_hash_size << std::endl;
+  sketches.emplace_back(
+      "LC_FB",
+      absl::make_unique<LossyCountFallback>(LossyCountFallback(
+          lcfb_window, FLAGS_hash_count, fb_hash_size)));
+
+  const uint lw_size = DetermineSketchParam(
+      FLAGS_sketch_size,
+      [fb_hash_size](uint val) -> uint {
+        return LossyWeight(val, FLAGS_hash_count, fb_hash_size).Size();
+      });
+  std::cout << "LW params: storage_size " << lw_size
+            << " fallback_hashsize " << fb_hash_size << std::endl;
+  sketches.emplace_back(
+      "LW", absl::make_unique<LossyWeight>(LossyWeight(
+          lw_size, FLAGS_hash_count, fb_hash_size)));
+
+  const uint freq_size = DetermineSketchParam(
+      FLAGS_sketch_size,
+      [](uint val) -> uint { return Frequent(val).Size(); });
+  std::cout << "Freq params: store_size " << freq_size << std::endl;
+  sketches.emplace_back(
+      "Freq", absl::make_unique<Frequent>(Frequent(freq_size)));
+
+  const uint freqfb_size = DetermineSketchParam(
+      FLAGS_sketch_size,
+      [fb_hash_size](uint val) -> uint {
+        return FrequentFallback(val, FLAGS_hash_count, fb_hash_size).Size();
+      });
+  std::cout << "Freq_FB params: store_size " << freqfb_size
+            << " fallback_hashsize " << fb_hash_size << std::endl;
+  sketches.emplace_back(
+      "Freq_FB", absl::make_unique<FrequentFallback>(FrequentFallback(
+      freqfb_size, FLAGS_hash_count, fb_hash_size)));
+
+  std::cout << std::endl;
   std::vector<SketchStats> sketch_stats;
-  for (auto& sketch : sketches) {
+  for (const auto& [name, sketch] : sketches) {
     SketchStats s;
-    s.name = sketch.first;
-    TestSketch(sketch.second.get(), data, counts, &s);
-    Evaluate(counts, heavy_hitters, &s);
+    s.name = name;
+    TestSketch(threshold, data, counts, sketch.get(), &s);
+    Evaluate(threshold, counts, heavy_hitters, &s);
     sketch_stats.push_back(s);
   }
 
