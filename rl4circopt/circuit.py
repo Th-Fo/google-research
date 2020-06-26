@@ -31,6 +31,7 @@ import itertools
 from typing import Iterable, Sequence, Tuple, Union
 
 import numpy as np
+import scipy.linalg
 from scipy.spatial import transform
 
 
@@ -1032,6 +1033,29 @@ class MatrixGate(Gate):
     """
     return self._pauli_transform.copy()
 
+  @classmethod
+  def parse(cls, gate: Gate) -> 'MatrixGate':
+    """Parses a gate into a matrix gate.
+
+    Returns a MatrixGate instance equivalent to the specified gate.
+
+    Args:
+        gate: the gate to be parsed.
+
+    Returns:
+        a MatrixGate instance that matches the specified input gate. If the
+        input gate is already an instance of MatrixGate, then the output is
+        identical to it.
+
+    Raises:
+      TypeError: if gate is not a Gate instance.
+    """
+
+    if not isinstance(gate, Gate):
+      raise TypeError('gate must be a Gate (found type: %s)'%type(gate).__name__)
+
+    return gate if isinstance(gate, MatrixGate) else cls(gate.get_operator())
+
 
 class PhasedXGate(Gate):
   """A single-qubit gate that performs a rotation around a logical axis on the equator.
@@ -1226,6 +1250,56 @@ class PhasedXGate(Gate):
       criterion = np.cos(0.5 * self.get_rotation_angle())
     return bool(np.isclose(criterion, 1.0, **kwargs))
 
+  @classmethod
+  def parse(cls, gate: Gate) -> 'PhasedXGate':
+    """Tries to parse a gate into a PhasedX gate.
+
+    Returns a PhasedXGate instance equivalent to the specified gate, or raises a
+    GateNotParsableError to indicate that this is not possible.
+
+    Args:
+        gate: the gate to be parsed.
+
+    Returns:
+        a PhasedXGate instance that matches the specified input gate up to
+        maximally a global phase. If the input gate is already an instance of
+        PhasedXGate, then the output is identical to it.
+
+    Raises:
+        TypeError: if gate is not a Gate instance.
+        GateNotParsableError: if no PhasedXGate instance exists that matches the
+            specified input gate up to maximally a global phase.
+    """
+
+    if not isinstance(gate, Gate):
+      raise TypeError('gate must be a Gate (found type: %s)'
+                      %type(gate).__name__)
+    if isinstance(gate, PhasedXGate):
+      return gate
+    if gate.get_num_qubits() != 1:
+      raise GateNotParsableError
+
+    if gate.is_identity(phase_invariant=True):
+      return cls(0.0, 0.0)
+    elif isinstance(gate, RotZGate):
+      raise GateNotParsableError
+    else:
+      pauli_transform = gate.get_pauli_transform()
+
+      if np.isclose(pauli_transform[2, 2], -1.0):
+        # we have a flip (rotation by pi)
+        return cls(
+            np.pi,
+            0.5 * np.arctan2(pauli_transform[0, 1], pauli_transform[0, 0])
+        )
+      else:
+        rotation = transform.Rotation.from_dcm(pauli_transform)
+        alpha, beta, gamma = rotation.as_euler('zxz')
+        if np.isclose(alpha, -gamma):
+          return cls(beta, -alpha)
+        else:
+          raise GateNotParsableError
+
 
 class RotZGate(Gate):
   """A single-qubit gate that performs a rotation around the logical z axis.
@@ -1297,6 +1371,51 @@ class RotZGate(Gate):
         **kwargs
     ))
 
+  @classmethod
+  def parse(cls, gate: Gate) -> 'RotZGate':
+    """Tries to parse a gate into a Z-rotation gate.
+
+    Returns a RotZGate instance equivalent to the specified gate, or raises a
+    GateNotParsableError to indicate that this is not possible.
+
+    Args:
+        gate: the gate to be parsed.
+
+    Returns:
+        a RotZGate instance that matches the specified input gate up to
+        maximally a global phase. If the input gate is already an instance of
+        RotZGate, then the output is identical to it.
+
+    Raises:
+        TypeError: if gate is not a Gate instance.
+        GateNotParsableError: if no RotZGate instance exists that matches the
+            specified input gate up to maximally a global phase.
+    """
+
+    if not isinstance(gate, Gate):
+      raise TypeError('gate must be a Gate (found type: %s)'
+                      %type(gate).__name__)
+    if isinstance(gate, RotZGate):
+      return gate
+    if gate.get_num_qubits() != 1:
+      raise GateNotParsableError
+
+    if gate.is_identity(phase_invariant=True):
+      return cls(0.0)
+    elif isinstance(gate, PhasedXGate):
+      raise GateNotParsableError
+    else:
+      pauli_transform = gate.get_pauli_transform()
+
+      # check whether the logical Z axis is preserved (which defines RotZGate)
+      if np.isclose(pauli_transform[2, 2], 1.0):
+        return cls(np.arctan2(
+            pauli_transform[1, 0],
+            pauli_transform[0, 0]
+        ))
+      else:
+        raise GateNotParsableError
+
 
 class ControlledZGate(Gate):
   """A Controlled-Z gate (or CZ gate for short).
@@ -1327,6 +1446,43 @@ class ControlledZGate(Gate):
     _check_permutation(np.array(permutation).astype(int, casting='safe'), 2)
     # Controlled-Z is symmetric.
     return self
+
+  @classmethod
+  def parse(cls, gate: Gate) -> 'ControlledZGate':
+    """Tries to parse a gate into a Controlled-Z gate.
+
+    Returns a ControlledZGate instance equivalent to the specified gate, or
+    raises a GateNotParsableError to indicate that this is not possible.
+
+    Args:
+        gate: the gate to be parsed.
+
+    Returns:
+        a ControlledZGate instance that matches the specified input gate up to
+        maximally a global phase. If the input gate is already an instance of
+        ControlledZGate, then the output is identical to it.
+
+    Raises:
+        TypeError: if gate is not a Gate instance.
+        GateNotParsableError: if the specified input gate does not match a
+            Controlled-Z gate up to maximally a global phase.
+    """
+
+    if not isinstance(gate, Gate):
+      raise TypeError('gate must be a Gate (found type: %s)'
+                      %type(gate).__name__)
+    if isinstance(gate, ControlledZGate):
+      return gate
+    if gate.get_num_qubits() != 2:
+      raise GateNotParsableError
+
+    controlled_z_gate = cls()
+
+    if np.allclose(gate.get_pauli_transform(),
+                   controlled_z_gate.get_pauli_transform()):
+      return controlled_z_gate
+    else:
+      raise GateNotParsableError
 
 
 class FermionicSimulationGate(Gate):
@@ -1379,6 +1535,86 @@ class FermionicSimulationGate(Gate):
     _check_permutation(np.array(permutation).astype(int, casting='safe'), 2)
     # FSim-Gate is symmetric.
     return self
+
+  @classmethod
+  def parse(cls, gate: Gate) -> 'FermionicSimulationGate':
+    """Tries to parse a gate into a fermionic simulation gate.
+
+    Returns a FermionicSimulationGate instance equivalent to the specified gate,
+    or raises a GateNotParsableError to indicate that this is not possible.
+
+    Args:
+        gate: the gate to be parsed.
+
+    Returns:
+        a FermionicSimulationGate instance that matches the specified input gate
+        up to maximally a global phase. If the input gate is already an instance
+        of FermionicSimulationGate, then the output is identical to it.
+
+    Raises:
+        TypeError: if gate is not a Gate instance.
+        GateNotParsableError: if no FermionicSimulationGate instance exists that
+            matches the specified input gate up to maximally a global phase.
+    """
+
+    if not isinstance(gate, Gate):
+      raise TypeError('gate must be a Gate (found type: %s)'
+                      %type(gate).__name__)
+    if isinstance(gate, FermionicSimulationGate):
+      return gate
+    if gate.get_num_qubits() != 2:
+      raise GateNotParsableError
+
+    # This function uses the eigendecomposition for the operator of a fSim gate
+    # which reads
+    #
+    #     fSim(theta, phi) == dot(basis, diag_form, basis^dag)
+    #
+    # where basis is defined by
+    #
+    #     [ 1,         0,          0, 0 ]
+    #     [ 0, 1/sqrt(2),  1/sqrt(2), 0 ]
+    #     [ 0, 1/sqrt(2), -1/sqrt(2), 0 ]
+    #     [ 0,         0,          0, 1 ]
+    #
+    # and diag_form == exp(i*global_phase) * diag([1, exp(-i*theta),
+    # exp(i*theta), exp(-i*phi)]).
+
+    # construct the eigenbasis for any fSim gate
+    basis = scipy.linalg.block_diag(
+        np.eye(1),
+        np.multiply(np.sqrt(0.5), [[1.0, 1.0], [1.0, -1.0]]),
+        np.eye(1)
+    )
+
+    # try to diagonalize the operator (assuming that it represents a fSim gate)
+    diag_form = np.dot(basis.T.conj(), gate.get_operator()).dot(basis)
+
+    # if diag_form is not indeed diagonal (with the absolute of all eigenvalues
+    # being 1), abort indicating that the gate cannot be parsed
+    if not np.allclose(np.abs(diag_form), np.eye(4)):
+      raise GateNotParsableError
+
+    # extract the eigenvalues of the operator, getting rid of a possible global
+    # phase; for a fSim gate, this will yield values of the form
+    #
+    #     [exp(-i*theta), exp(i*theta), exp(-i*phi)]
+    eigenvalues = np.diag(diag_form[1:, 1:]) * np.conj(diag_form[0, 0])
+
+    # dependent on whether also the eigenvalues are of the expected form, either
+    # return a fSim gate or indicate that the gate cannot be parsed
+    if np.isclose(eigenvalues[0], np.conj(eigenvalues[1])):
+      return cls(
+          theta=np.angle(eigenvalues[1]),
+          phi=-np.angle(eigenvalues[2])
+      )
+    else:
+      raise GateNotParsableError
+
+
+class GateNotParsableError(Exception):
+  """Indicates that a gate cannot be parsed into a certain gate type."""
+  pass
 
 
 def compute_pauli_transform(operator):

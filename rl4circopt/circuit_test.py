@@ -1561,6 +1561,45 @@ class MatrixGateTest(parameterized.TestCase):
         r' permutation of range\(7\)\)'):
       circuit.MatrixGate(np.eye(4)).apply_on([5, 5], 7)
 
+  @parameterized.parameters([
+      circuit.RotZGate(0.42),
+      circuit.PhasedXGate(0.815, 0.4711),
+      circuit.ControlledZGate()
+  ])
+  def test_parsing_actual(self, gate_in):
+    # call the function to be tested
+    gate_out = circuit.MatrixGate.parse(gate_in)
+
+    # check type of gate_out
+    self.assertIsInstance(gate_out, circuit.MatrixGate)
+
+    # check properties of gate_out
+    self.assertEqual(
+        gate_out.get_num_qubits(),
+        gate_in.get_num_qubits()
+    )
+    np.testing.assert_array_equal(
+        gate_out.get_operator(),
+        gate_in.get_operator()
+    )
+
+  @parameterized.parameters([1, 2, 3])
+  def test_parsing_identical(self, num_qubits):
+    # preparation work: construct MatrixGate gate_in
+    gate_in = circuit.MatrixGate(stats.unitary_group.rvs(2 ** num_qubits))
+
+    # call the function to be tested
+    gate_out = circuit.MatrixGate.parse(gate_in)
+
+    # check gate_out
+    self.assertIs(gate_out, gate_in)
+
+  def test_parsing_type_error(self):
+    with self.assertRaisesRegex(
+        TypeError,
+        r'gate must be a Gate \(found type: int\)'):
+      circuit.MatrixGate.parse(42)
+
 
 class PhasedXGateTest(parameterized.TestCase):
 
@@ -1843,6 +1882,63 @@ class PhasedXGateTest(parameterized.TestCase):
         True
     )
 
+  @parameterized.parameters([
+      circuit.RotZGate(0.0),
+      circuit.MatrixGate(np.eye(2)),
+      circuit.MatrixGate([
+          [np.cos(0.815), -np.exp(-0.4711j) * np.sin(0.815)],
+          [np.exp(0.4711j) * np.sin(0.815), np.cos(0.815)]
+      ])
+  ])
+  def test_parsing_positive(self, gate_in):
+    # call the function to be tested
+    gate_out = circuit.PhasedXGate.parse(gate_in)
+
+    # check type of gate_out
+    self.assertIsInstance(gate_out, circuit.PhasedXGate)
+
+    # check properties of gate_out
+    self.assertEqual(
+        gate_out.get_num_qubits(),
+        gate_in.get_num_qubits()
+    )
+    np.testing.assert_allclose(
+        gate_out.get_pauli_transform(),
+        gate_in.get_pauli_transform(),
+        rtol=1e-5, atol=1e-8
+    )
+
+  @parameterized.parameters([
+      circuit.PhasedXGate(0.0, 0.0),
+      circuit.PhasedXGate(0.815, 0.4711),
+      circuit.PhasedXGate.flip_x(),
+      circuit.PhasedXGate.flip_y()
+  ])
+  def test_parsing_identical(self, gate_in):
+    # call the function to be tested
+    gate_out = circuit.PhasedXGate.parse(gate_in)
+
+    # check gate_out
+    self.assertIs(gate_out, gate_in)
+
+  @parameterized.parameters([
+      circuit.RotZGate(0.42),
+      circuit.MatrixGate([
+          [1.0j * np.cos(0.815), -np.sin(0.815)],
+          [np.sin(0.815), -1.0j * np.cos(0.815)]
+      ]),
+      circuit.ControlledZGate()
+  ])
+  def test_parsing_negative(self, gate_in):
+    with self.assertRaises(circuit.GateNotParsableError):
+      circuit.PhasedXGate.parse(gate_in)
+
+  def test_parsing_type_error(self):
+    with self.assertRaisesRegex(
+        TypeError,
+        r'gate must be a Gate \(found type: int\)'):
+      circuit.PhasedXGate.parse(42)
+
 
 class RotZGateTest(parameterized.TestCase):
 
@@ -2002,6 +2098,60 @@ class RotZGateTest(parameterized.TestCase):
         True
     )
 
+  @parameterized.parameters([
+      circuit.PhasedXGate(0.0, 0.0),
+      circuit.PhasedXGate(0.0, 0.4711),
+      circuit.PhasedXGate(0.0, 0.5*np.pi),
+      circuit.MatrixGate(np.eye(2)),
+      circuit.MatrixGate(np.diag(np.exp([0.42j, 0.137j])))
+  ])
+  def test_parsing_positive(self, gate_in):
+    # call the function to be tested
+    gate_out = circuit.RotZGate.parse(gate_in)
+
+    # check type of gate_out
+    self.assertIsInstance(gate_out, circuit.RotZGate)
+
+    # check properties of gate_out
+    self.assertEqual(
+        gate_out.get_num_qubits(),
+        gate_in.get_num_qubits()
+    )
+    np.testing.assert_allclose(
+        gate_out.get_pauli_transform(),
+        gate_in.get_pauli_transform(),
+        rtol=1e-5, atol=1e-8
+    )
+
+  @parameterized.parameters([
+      circuit.RotZGate(0.0),
+      circuit.RotZGate(0.42)
+  ])
+  def test_parsing_identical(self, gate_in):
+    # call the function to be tested
+    gate_out = circuit.RotZGate.parse(gate_in)
+
+    # check gate_out
+    self.assertIs(gate_out, gate_in)
+
+  @parameterized.parameters([
+      circuit.PhasedXGate(0.815, 0.4711),
+      circuit.MatrixGate([
+          [np.cos(0.815), -np.sin(0.815)],
+          [np.sin(0.815), np.cos(0.815)]
+      ]),
+      circuit.ControlledZGate()
+  ])
+  def test_parsing_negative(self, gate_in):
+    with self.assertRaises(circuit.GateNotParsableError):
+      circuit.RotZGate.parse(gate_in)
+
+  def test_parsing_type_error(self):
+    with self.assertRaisesRegex(
+        TypeError,
+        r'gate must be a Gate \(found type: int\)'):
+      circuit.RotZGate.parse(42)
+
 
 class ControlledZGateTest(parameterized.TestCase):
 
@@ -2073,6 +2223,55 @@ class ControlledZGateTest(parameterized.TestCase):
   def test_permute_qubits(self, permutation, inverse):
     gate = circuit.ControlledZGate()
     self.assertIs(gate, gate.permute_qubits(permutation, inverse=inverse))
+
+  def test_parsing_positive(self):
+    # preparation work: construct matching MatrixGate gate_in
+    gate_in = circuit.MatrixGate(np.diag([1.0, 1.0, 1.0, -1.0]))
+
+    # call the function to be tested
+    gate_out = circuit.ControlledZGate.parse(gate_in)
+
+    # check type of gate_out
+    self.assertIsInstance(gate_out, circuit.ControlledZGate)
+
+    # check properties of gate_out
+    self.assertEqual(
+        gate_out.get_num_qubits(),
+        gate_in.get_num_qubits()
+    )
+    np.testing.assert_allclose(
+        gate_out.get_pauli_transform(),
+        gate_in.get_pauli_transform(),
+        rtol=1e-5, atol=1e-8
+    )
+
+  def test_parsing_identical(self):
+    # preparation work: construct ControlledZGate gate_in
+    gate_in = circuit.ControlledZGate()
+
+    # call the function to be tested
+    gate_out = circuit.ControlledZGate.parse(gate_in)
+
+    # check gate_out
+    self.assertIs(gate_out, gate_in)
+
+  @parameterized.parameters([
+      circuit.RotZGate(0.42),
+      circuit.PhasedXGate(0.815, 0.4711),
+      circuit.MatrixGate(np.kron(
+          stats.unitary_group.rvs(2),
+          stats.unitary_group.rvs(2)
+      ))
+  ])
+  def test_parsing_negative(self, gate_in):
+    with self.assertRaises(circuit.GateNotParsableError):
+      circuit.ControlledZGate.parse(gate_in)
+
+  def test_parsing_type_error(self):
+    with self.assertRaisesRegex(
+        TypeError,
+        r'gate must be a Gate \(found type: int\)'):
+      circuit.ControlledZGate.parse(42)
 
 
 class FermionicSimulationGateTest(parameterized.TestCase):
@@ -2190,6 +2389,69 @@ class FermionicSimulationGateTest(parameterized.TestCase):
 
     # check the function to be tested
     self.assertIs(gate, gate.permute_qubits(permutation, inverse=inverse))
+
+  @parameterized.parameters(itertools.product(
+      _testing_angles(),
+      _testing_angles(),
+      [0.0, 0.42, np.pi]
+  ))
+  def test_parsing_positive(self, theta, phi, global_phase):
+    # preparation work: construct matching MatrixGate gate_in
+    gate_in = circuit.MatrixGate(np.multiply(
+        np.exp(1.0j*global_phase),
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, np.cos(theta), -1.0j*np.sin(theta), 0.0],
+            [0.0, -1.0j*np.sin(theta), np.cos(theta), 0.0],
+            [0.0, 0.0, 0.0, np.exp(-1.0j*phi)]
+        ]
+    ))
+
+    # call the function to be tested
+    gate_out = circuit.FermionicSimulationGate.parse(gate_in)
+
+    # check type of gate_out
+    self.assertIsInstance(gate_out, circuit.FermionicSimulationGate)
+
+    # check properties of gate_out
+    self.assertEqual(
+        gate_out.get_num_qubits(),
+        gate_in.get_num_qubits()
+    )
+    np.testing.assert_allclose(
+        gate_out.get_pauli_transform(),
+        gate_in.get_pauli_transform(),
+        rtol=1e-5, atol=1e-8
+    )
+
+  @parameterized.parameters(itertools.product(_testing_angles(), repeat=2))
+  def test_parsing_identical(self, theta, phi):
+    # preparation work: construct FermionicSimulationGate gate_in
+    gate_in = circuit.FermionicSimulationGate(theta, phi)
+
+    # call the function to be tested
+    gate_out = circuit.FermionicSimulationGate.parse(gate_in)
+
+    # check gate_out
+    self.assertIs(gate_out, gate_in)
+
+  @parameterized.parameters([
+      circuit.RotZGate(0.42),
+      circuit.PhasedXGate(0.815, 0.4711),
+      circuit.MatrixGate(np.kron(
+          stats.unitary_group.rvs(2),
+          stats.unitary_group.rvs(2)
+      ))
+  ])
+  def test_parsing_negative(self, gate_in):
+    with self.assertRaises(circuit.GateNotParsableError):
+      circuit.FermionicSimulationGate.parse(gate_in)
+
+  def test_parsing_type_error(self):
+    with self.assertRaisesRegex(
+        TypeError,
+        r'gate must be a Gate \(found type: int\)'):
+      circuit.FermionicSimulationGate.parse(42)
 
 
 class ComputePauliTransformTest(parameterized.TestCase):

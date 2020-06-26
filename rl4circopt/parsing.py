@@ -21,10 +21,11 @@ parse_operations(...), which implement gate parsing for sequences of Gate and
 Operation instances, respectively.
 """
 
-import numpy as np
-import scipy.spatial
+from typing import Callable
 
 from rl4circopt import circuit
+
+_parsers = {}
 
 
 # TODO(tfoesel): improve design for this module and add unit tests
@@ -49,76 +50,13 @@ def parse_gates(gates, *gate_types):
 
   parsed_gates = []
 
-  for gate_in, gate_type in zip(gates, gate_types):
-    if not isinstance(gate_in, circuit.Gate):
-      raise TypeError('%s is not a Gate'%type(gate_in).__name__)
-    if not isinstance(gate_type, type):
-      raise TypeError('%s instance is not a type'%type(gate_type).__name__)
-    if not issubclass(gate_type, circuit.Gate):
-      raise TypeError('%s is not a Gate type'%gate_type.__name__)
-
-    if gate_type == circuit.PhasedXGate:
-      if gate_in.get_num_qubits() != 1:
-        return None
-      elif isinstance(gate_in, circuit.PhasedXGate):
-        gate_out = gate_in
-      elif isinstance(gate_in, circuit.RotZGate):
-        if gate_in.is_identity(phase_invariant=True):
-          gate_out = circuit.PhasedXGate(0.0, 0.0)
-        else:
-          return None
-      else:
-        pauli_transform = gate_in.get_pauli_transform()
-        if np.isclose(pauli_transform[2, 2], -1.0):
-          gate_out = circuit.PhasedXGate(
-              np.pi,
-              0.5 * np.arctan2(pauli_transform[0, 1], pauli_transform[0, 0])
-          )
-        else:
-          rotation = scipy.spatial.transform.Rotation.from_dcm(pauli_transform)
-          alpha, beta, gamma = rotation.as_euler('zxz')
-          if np.isclose(alpha, -gamma):
-            gate_out = circuit.PhasedXGate(beta, -alpha)
-          else:
-            return None
-    elif gate_type == circuit.RotZGate:
-      if gate_in.get_num_qubits() != 1:
-        return None
-      elif isinstance(gate_in, circuit.RotZGate):
-        gate_out = gate_in
-      elif isinstance(gate_in, circuit.PhasedXGate):
-        if gate_in.is_identity(phase_invariant=True):
-          gate_out = circuit.RotZGate(0.0)
-        else:
-          return None
-      else:
-        pauli_transform = gate_in.get_pauli_transform()
-        if np.isclose(pauli_transform[2, 2], 1.0):
-          gate_out = circuit.RotZGate(np.arctan2(
-              pauli_transform[1, 0],
-              pauli_transform[0, 0]
-          ))
-        else:
-          return None
-    elif gate_type == circuit.ControlledZGate:
-      if gate_in.get_num_qubits() != 2:
-        return None
-      elif isinstance(gate_in, circuit.ControlledZGate):
-        gate_out = gate_in
-      elif gate_in == circuit.ControlledZGate():
-        gate_out = circuit.ControlledZGate()
-      else:
-        return None
-    else:
-      raise ValueError('unknown Gate type: %s'%gate_type.__name__)
-
-    assert isinstance(gate_out, gate_type)
-
-    parsed_gates.append(gate_out)
-
-  assert len(parsed_gates) == len(gates)
-
-  return parsed_gates
+  try:
+    return [
+        parse_gate(gate, gate_type)
+        for gate, gate_type in zip(gates, gate_types)
+    ]
+  except circuit.GateNotParsableError:
+    return None
 
 
 def parse_operations(operations, *gate_types):
@@ -148,3 +86,129 @@ def parse_operations(operations, *gate_types):
       parsed_operations.append(operation)
 
     return parsed_operations
+
+def parse_gate(gate: circuit.Gate, gate_type: type) -> circuit.Gate:
+  """Tries to convert a gate into the expected gate type.
+
+  Returns an instance of the specified gate_type which is equivalent to the
+  specified gate, or raises a GateNotParsableError to indicate that this is not
+  possible.
+
+  Args:
+      gate: the gate to be parsed.
+      gate_type: a subtype of Gate into which the input gate should be
+          converted.
+
+  Returns:
+      an instance of the specified gate_type that matches the specified input
+      gate up to maximally a global phase. If the input gate is already an
+      instance of gate_type, then the output can be identical to it.
+
+  Raises:
+      TypeError: if gate is not a Gate instance, or if gate_type is not a type
+          instance that represents a subtype of Gate.
+      NoParserRegisteredError: if no parser is registered for the specified
+          gate_type.
+      GateNotParsableError: if no instance of the specified gate_type exists
+          that matches the specified input gate up to maximally a global phase.
+      RuntimeError: if the parser registered for gate_type does not behave as
+          expected, i.e. if it raises an exception different from
+          GateNotParsableError (given an input that is promised to be a Gate
+          instance), or if its return value is not an instance of the specified
+          gate_type.
+  """
+
+  # check the input arguments
+  if not isinstance(gate, circuit.Gate):
+    raise TypeError('gate is not a Gate (found type: %s)'%type(gate).__name__)
+  if not isinstance(gate_type, type):
+    raise TypeError('gate_type is not a type (found: instance of %s)'
+                    %type(gate_type).__name__)
+  if not issubclass(gate_type, circuit.Gate):
+    raise TypeError('gate_type is not a Gate type (found: %s)'
+                    %gate_type.__name__)
+
+  try:
+    parser = _parsers[gate_type]
+  except KeyError:
+    raise NoParserRegisteredError('no parser registered for gate type %s'
+                                  %gate_type.__name__)
+
+  try:
+    gate_out = parser(gate)
+  except circuit.GateNotParsableError as err:
+    raise err
+  except Exception as err:
+    error_message = getattr(err, 'message', str(err))
+    raise RuntimeError(
+        'internal error: parser for %s unexpectedly raised %s %s'%(
+            gate_type.__name__,
+            type(err).__name__,
+            '\"%s\"'%error_message if error_message else '(without message)'
+        )
+    )
+
+  if gate_out is None:
+    raise RuntimeError('internal error: parser for %s did not return anything'
+                       %gate_type.__name__)
+  if not isinstance(gate_out, gate_type):
+    raise RuntimeError(
+        'internal error: parser for %s returned an instance of type %s'
+        %(gate_type.__name__, type(gate_out).__name__)
+    )
+
+  return gate_out
+
+
+def register_parser(gate_type: type,
+                    parser: Callable[[circuit.Gate], circuit.Gate]):
+  """Register a new parser for a Gate type.
+
+  Args:
+    gate_type: the subtype of Gate for which the parser should be responsible.
+    parser: a callable with signature `gate_out = parser(gate_in)`, where
+      gate_in is promised to be an instance of Gate, and `gate_out` must be an
+      instance of the specified gate_type. If gate_in cannot be represented by
+      an instance of gate_type, the parser is supposed to raise a
+      GateNotParsableError.
+
+  Raises:
+    TypeError: if gate_type is not a type instance that represents a subtype of
+      Gate, or if parser is not callable.
+  """
+
+  # check the input arguments
+  if not isinstance(gate_type, type):
+    raise TypeError('gate_type is not a type (found: instance of %s)'
+                    %type(gate_type).__name__)
+  if not issubclass(gate_type, circuit.Gate):
+    raise TypeError('gate_type is not a Gate type (found: %s)'
+                    %gate_type.__name__)
+  if not callable(parser):
+    raise TypeError('parser is not callable (found type: %s)'
+                    %type(parser).__name__)
+
+  # print a warning if a parser has already been registered for this gate type
+  if gate_type in _parsers:
+    print(
+        'overriding parser for gate type %s'%gate_type.__name__,
+        file=sys.stderr
+    )
+
+  # actually register the parser
+  _parsers[gate_type] = parser
+
+
+class NoParserRegisteredError(Exception):
+  """Indicates that no parser has been registered for a certain gate type."""
+  pass
+
+
+# register parsers for standard gates
+
+register_parser(circuit.MatrixGate, circuit.MatrixGate.parse)
+register_parser(circuit.PhasedXGate, circuit.PhasedXGate.parse)
+register_parser(circuit.RotZGate, circuit.RotZGate.parse)
+register_parser(circuit.ControlledZGate, circuit.ControlledZGate.parse)
+register_parser(circuit.FermionicSimulationGate,
+                circuit.FermionicSimulationGate.parse)
