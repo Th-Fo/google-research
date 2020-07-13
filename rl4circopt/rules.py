@@ -410,10 +410,28 @@ class ExchangePhasedXwithRotZ(PairTransformationRule):
     if operation_first.commutes_trivially_with(operation_second):
       raise RuntimeError()  # cmp. TODO at the beginning of this file
 
-    parsed = parsing.parse_operations([operation_first, operation_second],
-                                      circuit.PhasedXGate, circuit.RotZGate)
-    if parsed is not None:
-      phased_x, rot_z = parsed
+    try:
+      phased_x, rot_z = parsing.parse_operations(
+          [operation_first, operation_second],
+          circuit.PhasedXGate, circuit.RotZGate
+      )
+    except circuit.GateNotParsableError:
+      try:
+        rot_z, phased_x = parsing.parse_operations(
+            [operation_first, operation_second],
+            circuit.RotZGate, circuit.PhasedXGate
+        )
+      except circuit.GateNotParsableError:
+        raise RuleNotApplicableError
+      else:
+        rot_z_angle = rot_z.get_gate().get_rotation_angle()
+
+        mod_phased_x = phased_x.replace_gate(
+            phased_x.get_gate().shift_phase_angle(-rot_z_angle)
+        )
+
+        return [mod_phased_x], [rot_z]
+    else:
       rot_z_angle = rot_z.get_gate().get_rotation_angle()
 
       mod_phased_x = phased_x.replace_gate(
@@ -421,20 +439,6 @@ class ExchangePhasedXwithRotZ(PairTransformationRule):
       )
 
       return [rot_z], [mod_phased_x]
-
-    parsed = parsing.parse_operations([operation_first, operation_second],
-                                      circuit.RotZGate, circuit.PhasedXGate)
-    if parsed is not None:
-      rot_z, phased_x = parsed
-      rot_z_angle = rot_z.get_gate().get_rotation_angle()
-
-      mod_phased_x = phased_x.replace_gate(
-          phased_x.get_gate().shift_phase_angle(-rot_z_angle)
-      )
-
-      return [mod_phased_x], [rot_z]
-
-    raise RuleNotApplicableError
 
 
 class ExchangePhasedXwithControlledZ(PairTransformationRule):
@@ -466,29 +470,24 @@ class ExchangePhasedXwithControlledZ(PairTransformationRule):
     if operation_first.commutes_trivially_with(operation_second):
       raise RuntimeError()  # cmp. TODO at the beginning of this file
 
-    parsed = parsing.parse_operations(
-        [operation_first, operation_second],
-        circuit.PhasedXGate, circuit.ControlledZGate
-    )
-    if parsed is not None:
-      phased_x, _ = parsed
-      return bool(np.isclose(
-          np.cos(phased_x.get_gate().get_rotation_angle()),
-          -1.0
-      ))
+    try:
+      phased_x, _ = parsing.parse_operations(
+          [operation_first, operation_second],
+          circuit.PhasedXGate, circuit.ControlledZGate
+      )
+    except circuit.GateNotParsableError:
+      try:
+        _, phased_x = parsing.parse_operations(
+            [operation_first, operation_second],
+            circuit.ControlledZGate, circuit.PhasedXGate
+        )
+      except circuit.GateNotParsableError:
+        return False
 
-    parsed = parsing.parse_operations(
-        [operation_first, operation_second],
-        circuit.ControlledZGate, circuit.PhasedXGate
-    )
-    if parsed is not None:
-      _, phased_x = parsed
-      return bool(np.isclose(
-          np.cos(phased_x.get_gate().get_rotation_angle()),
-          -1.0
-      ))
-
-    return False
+    return bool(np.isclose(
+        np.cos(phased_x.get_gate().get_rotation_angle()),
+        -1.0
+    ))
 
   def perform(self, operation_first, operation_second):
     # implements abstract method from parent class PairTransformationRule
@@ -496,20 +495,18 @@ class ExchangePhasedXwithControlledZ(PairTransformationRule):
     if not self.accept(operation_first, operation_second):
       raise RuleNotApplicableError
 
-    parsed = parsing.parse_operations(
-        [operation_first, operation_second],
-        circuit.PhasedXGate, circuit.ControlledZGate
-    )
-    if parsed is not None:
-      phased_x, cz = parsed
-    else:
-      parsed = parsing.parse_operations(
+    try:
+      phased_x, cz = parsing.parse_operations(
           [operation_first, operation_second],
-          circuit.ControlledZGate, circuit.PhasedXGate
+          circuit.PhasedXGate, circuit.ControlledZGate
       )
-      if parsed is not None:
-        cz, phased_x = parsed
-      else:
+    except circuit.GateNotParsableError:
+      try:
+        cz, phased_x = parsing.parse_operations(
+            [operation_first, operation_second],
+            circuit.ControlledZGate, circuit.PhasedXGate
+        )
+      except circuit.GateNotParsableError:
         raise RuleNotApplicableError
 
     if not np.isclose(np.cos(phased_x.get_gate().get_rotation_angle()), -1.0):

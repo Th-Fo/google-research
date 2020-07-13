@@ -14,78 +14,313 @@
 # limitations under the License.
 
 # Lint as: python3
-"""Tool for parsing Gate types.
+"""Tools for parsing gates, either standalone or as part of an operation.
 
-This module currently contains two functions, parse_gates(...) and
-parse_operations(...), which implement gate parsing for sequences of Gate and
-Operation instances, respectively.
+This module provides the following 6 functions:
+
+* check_operations(...)   checks whether the gates of an operation sequence
+                          could be parsed into the specified gate types
+* parse_operations(...)   parses the gates in an operation sequence into the
+                          specified gate types (if possible)
+* parse_operation(...)    parses the gate of one operation into a specified gate
+                          type (if possible)
+* check_gates(...)        checks whether a gate sequence could be parsed into
+                          the specified gate types
+* parse_gates(...)        parses a gate sequence into the specified gate types
+                          (if possible)
+* parse_gate(...)         parses one gate into a specified gate type (if
+                          possible)
+
+These functions internally call specific parsers responsible for the respective
+target gate types. Such a parser has the signature
+
+    gate_out = parser(gate_in)
+
+where gate_out must be an instance of the target gate type.
+
+The management of these parsers is also done by this module. For the standard
+gates defined in circuit.py, parsers are automatically available. More parsers
+can be added using the register_parser(...) function.
 """
 
-from typing import Callable
+from typing import Callable, List, Sequence, Tuple
 
 from rl4circopt import circuit
+
+import sys
 
 _parsers = {}
 
 
-# TODO(tfoesel): improve design for this module and add unit tests
+def check_operations(operations: Sequence[circuit.Operation],
+                     *gate_types: Tuple[type]
+                    ) -> bool:
+  """Checks if a sequence of operations could be converted into the expected gate types.
+
+  Returns a bool indicating whether, for every index n, it is possible to
+  convert the gate of operations[n] into gate_types[n].
+
+  Args:
+      operations: the sequence of operations to be checked.
+      gate_types: a tuple of Gate subtypes, of the same length as operations.
+          For every index n, `gate_types[n]` specifies the Gate type into which
+          the gate of `operations[n]` should be converted.
+
+  Returns:
+      True iff for every index n, there is an instance of gate_types[n] which
+      matches the gate of operations[n] up to maximally a global phase.
+
+  Raises:
+      TypeError: if operations is not a sequence of Operation instances, or if
+          gate_types does not only contain type instances that represent
+          subtypes of Gate.
+      ValueError: if the lengths of operations and gate_types do not match.
+      NoParserRegisteredError: if no parser is registered for one of the
+          specified gate_types.
+      RuntimeError: if the parser registered for one of the gate_types does not
+          behave as expected, i.e. if it raises an exception different from
+          GateNotParsableError (given an input that is promised to be a Gate
+          instance), or if its return value is not an instance of the specified
+          Gate type.
+  """
+
+  try:
+    # besides a GateNotParsableError, possibly also raises a TypeError,
+    # ValueError, NoParserRegisteredError or RuntimeError
+    parse_operations(operations, *gate_types)
+  except circuit.GateNotParsableError:
+    return False
+  else:
+    return True
 
 
-def check_gates(gates, *gate_types):
-  """Checks whether the gates match the expected types."""
-  return parse_gates(gates, *gate_types) is not None
+def parse_operations(operations: Sequence[circuit.Operation],
+                     *gate_types: Tuple[type]
+                    ) -> List[circuit.Operation]:
+  """Tries to convert a sequence of operations into the expected gate types.
+
+  Returns a list of operations where the n-th output operation is equivalent to
+  the n-th input operation, and its gate is simultaneously an instance of
+  gate_types[n], or raises a GateNotParsableError to indicate that this is not
+  possible.
+
+  Args:
+      operations: the sequence of operations to be parsed.
+      gate_types: a tuple of Gate subtypes, of the same length as operations.
+          For every index n, `gate_types[n]` specifies the Gate type into which
+          the gate of `operations[n]` should be converted.
+
+  Returns:
+      a sequence of operations whose gates are an instance of their
+      corresponding gate_types, and which match their corresponding input
+      operations up to maximally a global phase. If the gates of some input
+      operations are already an instance of their target Gate type, these
+      operations may become part of the output without any conversion.
+
+  Raises:
+      TypeError: if operations is not a sequence of Operation instances, or if
+          gate_types does not only contain type instances that represent
+          subtypes of Gate.
+      ValueError: if the lengths of operations and gate_types do not match.
+      NoParserRegisteredError: if no parser is registered for one of the
+          specified gate_types.
+      GateNotParsableError: if for the gate of (at least) one of the input
+          operations, no instance of the corresponding specified Gate type
+          exists that matches this gate up to maximally a global phase.
+      RuntimeError: if the parser registered for one of the gate_types does not
+          behave as expected, i.e. if it raises an exception different from
+          GateNotParsableError (given an input that is promised to be a Gate
+          instance), or if its return value is not an instance of the specified
+          Gate type.
+  """
+  try:
+    operations = list(operations)
+  except TypeError:
+    raise TypeError('operations is not a sequence (found type: %s)'
+                    %type(operations).__name__)
+
+  if not all(isinstance(operation, circuit.Operation)
+             for operation in operations):
+    illegal_types = set(
+        type(operation)
+        for operation in operations
+        if not isinstance(operation, circuit.Operation)
+    )
+    raise TypeError(
+        'not all operations are instances of Operation [found: instance(s)'
+        ' of %s]'%', '.join(sorted(t.__name__ for t in illegal_types))
+    )
+
+  _check_gate_types(gate_types)  # possibly raises a TypeError
+
+  if len(operations) != len(gate_types):
+    raise ValueError(
+        'inconsistent length of operations and gate_types (%d vs %d)'
+        %(len(operations), len(gate_types))
+    )
+
+  return [
+      parse_operation(operation, gate_type)
+      for operation, gate_type in zip(operations, gate_types)
+  ]
 
 
-def check_operations(operations, *gate_types):
-  """Checks whether the gates of the operations match the expected types."""
-  return parse_operations(operations, *gate_types) is not None
+def parse_operation(operation: circuit.Operation,
+                    gate_type: type
+                   ) -> circuit.Operation:
+  """Tries to convert an operation into the expected gate type.
+
+  Returns an operation which is equivalent to the input operation, and whose
+  gate is simultaneously an instance of the specified gate_type, or raises a
+  GateNotParsableError to indicate that this is not possible.
+
+  Args:
+      operation: the operation to be parsed.
+      gate_type: a subtype of Gate into which the gate of the input operation
+          should be converted.
+
+  Returns:
+      an operation whose gate is an instance of the specified gate_type, and
+      which matches the specified input operation up to maximally a global
+      phase. If the gate of the input operation is already an instance of
+      gate_type, then the output can be identical to it.
+
+  Raises:
+      TypeError: if operation is not an Operation instance, or if gate_type is
+          not a type instance that represents a subtype of Gate.
+      NoParserRegisteredError: if no parser is registered for the specified
+          gate_type.
+      GateNotParsableError: if no instance of the specified gate_type exists
+          that matches the gate of the specified input operation up to maximally
+          a global phase.
+      RuntimeError: if the parser registered for gate_type does not behave as
+          expected, i.e. if it raises an exception different from
+          GateNotParsableError (given an input that is promised to be a Gate
+          instance), or if its return value is not an instance of the specified
+          gate_type.
+  """
+
+  # check input argument operation (gate_type will be checked in parse_gate)
+  if not isinstance(operation, circuit.Operation):
+    raise TypeError('operation is not an Operation (found type: %s)'
+                    %type(operation).__name__)
+
+  # extract the gate of the input operation
+  gate_in = operation.get_gate()
+
+  # try to parse this gate to the specified gate_type (possibly raises a
+  # TypeError, GateNotParsableError or RuntimeError)
+  gate_out = parse_gate(gate_in, gate_type)
+
+  # return the parsed operation
+  return operation if gate_out is gate_in else operation.replace_gate(gate_out)
 
 
-def parse_gates(gates, *gate_types):
-  """Parses gates into expected gate types."""
+def check_gates(gates: Sequence[circuit.Gate],
+                *gate_types: Tuple[type]
+               ) -> bool:
+  """Checks if a sequence of gates could be converted into the expected gate types.
+
+  Returns a bool indicating whether, for every index n, it is possible to
+  convert gates[n] into gate_types[n].
+
+  Args:
+      gates: the sequence of gates to be checked.
+      gate_types: a tuple of Gate subtypes, of the same length as gates. For
+          every index n, `gate_types[n]` specifies the Gate type into which
+          `gates[n]` should be converted.
+
+  Returns:
+      True iff for every index n, there is an instance of gate_types[n] which
+      matches gates[n] up to maximally a global phase.
+
+  Raises:
+      TypeError: if gates is not a sequence of Gate instances, or if gate_types
+          does not only contain type instances that represent subtypes of Gate.
+      ValueError: if the lengths of gates and gate_types do not match.
+      NoParserRegisteredError: if no parser is registered for one of the
+          specfied gate_types.
+      RuntimeError: if the parser registered for one of the gate_types does not
+          behave as expected, i.e. if it raises an exception different from
+          GateNotParsableError (given an input that is promised to be a Gate
+          instance), or if its return value is not an instance of the specified
+          Gate type.
+  """
+
+  try:
+    # besides a GateNotParsableError, possibly also raises a TypeError,
+    # ValueError, NoParserRegisteredError or RuntimeError
+    parse_gates(gates, *gate_types)
+  except circuit.GateNotParsableError:
+    return False
+  else:
+    return True
+
+
+def parse_gates(gates: Sequence[circuit.Gate],
+                *gate_types: Tuple[type]
+               ) -> List[circuit.Gate]:
+  """Tries to convert a sequence of gates into the expected gate types.
+
+  Returns a list of gates where the n-th output gate is equivalent to the n-th
+  input gate and is simultaneously an instance of the gate_types[n], or raises a
+  GateNotParsableError to indicate that this is not possible.
+
+  Args:
+      gates: the sequence of gates to be parsed.
+      gate_types: a tuple of Gate subtypes, of the same length as gates. For
+          every index n, `gate_types[n]` specifies the Gate type into which
+          `gates[n]` should be converted.
+
+  Returns:
+      a sequence of gates which are instances of their corresponding gate_types,
+      and which match their corresponding input gate up to maximally a global
+      phase. If some input gates are already an instance of their target Gate
+      type, they may become part of the output without any conversion.
+
+  Raises:
+      TypeError: if gates is not a sequence of Gate instances, or if gate_types
+          does not only contain type instances that represent subtypes of Gate.
+      ValueError: if the lengths of gates and gate_types do not match.
+      NoParserRegisteredError: if no parser is registered for one of the
+          specified gate_types.
+      GateNotParsableError: if for (at least) one of the input gates, no
+          instance of the corresponding specified Gate type exists that matches
+          this gate up to maximally a global phase.
+      RuntimeError: if the parser registered for one of the gate_types does not
+          behave as expected, i.e. if it raises an exception different from
+          GateNotParsableError (given an input that is promised to be a Gate
+          instance), or if its return value is not an instance of the specified
+          Gate type.
+  """
+  try:
+    gates = list(gates)
+  except TypeError:
+    raise TypeError('gates is not a sequence (found type: %s)'
+                    %type(gates).__name__)
+
+  if not all(isinstance(gate, circuit.Gate) for gate in gates):
+    illegal_types = set(
+        type(gate)
+        for gate in gates
+        if not isinstance(gate, circuit.Gate)
+    )
+    raise TypeError(
+        'not all gates are instances of Gate [found: instance(s) of %s]'
+        %', '.join(sorted(t.__name__ for t in illegal_types))
+    )
+
+  _check_gate_types(gate_types)  # possibly raises a TypeError
 
   if len(gates) != len(gate_types):
     raise ValueError('inconsistent length of gates and gate_types (%d vs %d)'
                      %(len(gates), len(gate_types)))
 
-  parsed_gates = []
+  return [
+      parse_gate(gate, gate_type)
+      for gate, gate_type in zip(gates, gate_types)
+  ]
 
-  try:
-    return [
-        parse_gate(gate, gate_type)
-        for gate, gate_type in zip(gates, gate_types)
-    ]
-  except circuit.GateNotParsableError:
-    return None
-
-
-def parse_operations(operations, *gate_types):
-  """Parse operations into expected gate types."""
-
-  if len(operations) != len(gate_types):
-    raise ValueError('inconsistent length of operations and gate_types'
-                     ' (%d vs %d)'%(len(operations), len(gate_types)))
-
-  for operation in operations:
-    if not isinstance(operation, circuit.Operation):
-      raise TypeError('%s is not an Operation'%type(operation).__name__)
-
-  parsed_gates = parse_gates(
-      [operation.get_gate() for operation in operations],
-      *gate_types
-  )
-
-  if parsed_gates is None:
-    return None
-  else:
-    parsed_operations = []
-
-    for operation, parsed_gate in zip(operations, parsed_gates):
-      if operation.get_gate() is not parsed_gate:
-        operation = circuit.Operation(parsed_gate, operation.get_qubits())
-      parsed_operations.append(operation)
-
-    return parsed_operations
 
 def parse_gate(gate: circuit.Gate, gate_type: type) -> circuit.Gate:
   """Tries to convert a gate into the expected gate type.
@@ -202,6 +437,29 @@ def register_parser(gate_type: type,
 class NoParserRegisteredError(Exception):
   """Indicates that no parser has been registered for a certain gate type."""
   pass
+
+
+def _check_gate_types(gate_types):
+  if not all(isinstance(gate_type, type) for gate_type in gate_types):
+    illegal_types = set(
+        type(gate_type)
+        for gate_type in gate_types
+        if not isinstance(gate_type, type)
+    )
+    raise TypeError(
+        'not all gate_types are types [found: instance(s) of %s]'
+        %', '.join(sorted(t.__name__ for t in illegal_types))
+    )
+  if not all(issubclass(gate_type, circuit.Gate) for gate_type in gate_types):
+    illegal_types = set(
+        gate_type
+        for gate_type in gate_types
+        if not issubclass(gate_type, circuit.Gate)
+    )
+    raise TypeError(
+        'not all gate_types are subtypes of Gate [found types: %s]'
+        %', '.join(sorted(t.__name__ for t in illegal_types))
+    )
 
 
 # register parsers for standard gates

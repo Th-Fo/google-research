@@ -69,21 +69,26 @@ class XmonArchitecture:
     if len(gates) <= 1:
       return False  # we already know that it's not identity (if length is 1)
     elif len(gates) == 2:
-      parsed = parsing.parse_gates(gates, circuit.PhasedXGate, circuit.RotZGate)
-      if parsed is not None:
-        return bool(np.isclose(  # check whether the PhasedX is a flip
-            np.cos(parsed[0].get_rotation_angle()),
-            -1.0
-        ))
-
-      parsed = parsing.parse_gates(gates, circuit.RotZGate, circuit.PhasedXGate)
-      if parsed is not None:
-        return bool(np.isclose(  # check whether the PhasedX is a flip
-            np.cos(parsed[1].get_rotation_angle()),
-            -1.0
-        ))
-
-      return True  # either two PhasedX gates or two RotZ gates
+      try:
+        phased_x_gate, _ = parsing.parse_gates(
+            gates,
+            circuit.PhasedXGate, circuit.RotZGate
+        )
+      except circuit.GateNotParsableError:
+        try:
+          _, phased_x_gate = parsing.parse_gates(
+              gates,
+              circuit.RotZGate, circuit.PhasedXGate
+          )
+        except circuit.GateNotParsableError:
+          # either two PhasedX gates, or two RotZ gates, or a combination
+          # including another gate
+          return True
+      
+      return bool(np.isclose(  # check whether the PhasedX is a flip
+          np.cos(phased_x_gate.get_rotation_angle()),
+          -1.0
+      ))
     else:
       return True
 
