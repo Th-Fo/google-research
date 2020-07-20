@@ -621,6 +621,153 @@ class Operation:
     ]
 
 
+def compute_pauli_transform(operator):
+  """Compute the action of a unitary operator on the Pauli operators.
+
+  We consider a density matrix rho under a unitary transformation U (* denotes
+  the matrix product):
+
+      rho -> rho' = U * rho * U^dagger
+
+  Since rho and rho' are Hermitian, they can be written as a linear combination
+  of the Pauli operators. For example, in the single-qubit case, we have:
+
+      rho  = 1/2 * (identity + x  * pauli_x + y  * pauli_y + z  * pauli_z)
+      rho' = 1/2 * (identity + x' * pauli_x + y' * pauli_y + z' * pauli_z)
+
+  The return value of compute_pauli_transform(U) is the matrix which transforms
+  the coefficients (x, y, z) into (x', y', z'):
+
+      [x']   [                 ]   [x]
+      [y'] = [ pauli_transform ] * [y]
+      [z']   [                 ]   [z]
+
+  This also works for more than one qubit. The only aspect that changes is the
+  number of Pauli operators and therefore also the number of coefficients.
+
+  This Pauli transform matrix defines a gate in a phase-invariant way, which can
+  simplify some analysis tasks for a gate, and makes it easier to compare
+  different gates.
+
+  Args:
+      operator: np.ndarray with shape (2 ** num_qubits, 2 ** num_qubits) and
+          dtype complex.
+          The unitary operator acting on a group of qubits.
+
+  Returns:
+      a matrix encoding the transformation of Pauli operators under the
+      specified operation.
+
+  Raises:
+      ValueError: if operator does not have a valid shape or if it is not
+          unitary.
+  """
+
+  operator = np.array(operator)
+  num_qubits = _analyse_operator(operator)
+  _check_unitary(operator, num_qubits)
+
+  # define 1-qubit Pauli group
+  pauli_1 = np.array([
+      [[1.0, 0.0], [0.0, 1.0]],     # identity
+      [[0.0, 1.0], [1.0, 0.0]],     # pauli_x
+      [[0.0, -1.0j], [1.0j, 0.0]],  # pauli_y
+      [[1.0, 0.0], [0.0, -1.0]]     # pauli_z
+  ])
+
+  # construct multi-qubit Pauli group
+  #
+  # e.g. if num_qubits == 2, will be sorted as
+  #
+  #     pauli_n[0] = kron(identity, identity)
+  #     pauli_n[1] = kron(identity, pauli_x)
+  #     pauli_n[2] = kron(identity, pauli_y)
+  #     pauli_n[3] = kron(identity, pauli_z)
+  #     pauli_n[4] = kron(pauli_x, identity)
+  #     pauli_n[5] = kron(pauli_x, pauli_x)
+  #        ...               ...
+  pauli_n = pauli_1
+  for _ in range(num_qubits-1):
+    pauli_n = np.kron(pauli_n, pauli_1)
+
+  # Sets pauli_transform[j,k] to
+  #
+  #     <dot(pauli_n[j+1], operator), dot(operator, pauli_n[k+1])>
+  #     ----------------------------------------------------------
+  #                            2 ** num_qubits
+  #
+  # where <.,.> is the Hilbert-Schmidt product. The first element of pauli_n
+  # which is the n-qubit identity does not need to be included because it is
+  # always mapped to identity.
+  pauli_transform = 0.5 ** num_qubits * np.tensordot(
+      np.matmul(pauli_n[1:], operator),
+      np.matmul(operator, pauli_n[1:]).conj(),
+      axes=[(1, 2), (1, 2)]
+  )
+
+  assert np.allclose(np.imag(pauli_transform), 0.0)
+
+  pauli_transform = np.real(pauli_transform)
+
+  return pauli_transform
+
+
+def _analyse_operator(operator, param_name='operator'):
+  """Checks the properties of an operator and extracts the number of qubits.
+
+  Args:
+    operator: the operator to be analysed.
+    param_name: the parameter name as displayed in potential error messages.
+
+  Returns:
+    returns: number of qubits.
+
+  Raises:
+      ValueError: if operator does not have a valid shape or if it is not
+          unitary.
+  """
+
+  if operator.ndim != 2:
+    raise ValueError(
+        '%s must be a 2D array (found: ndim=%d)'
+        %(param_name, operator.ndim)
+    )
+
+  rows, cols = operator.shape
+
+  if rows != cols:
+    raise ValueError(
+        '%s must be a square matrix [found: shape=(%d, %d)]'
+        %(param_name, rows, cols)
+    )
+
+  num_qubits = rows.bit_length()-1
+
+  if rows != 2 ** num_qubits:
+    raise ValueError(
+        'dimension of %s must be a power of 2 (found: dim=%d)'
+        %(param_name, rows)
+    )
+
+  return num_qubits
+
+
+def _check_unitary(operator, num_qubits, param_name='operator'):
+  """Checks whether an operator is unitary.
+
+  Args:
+      operator: the operator to be checked.
+      num_qubits: the number of qubits for the operator.
+      param_name: the parameter name as displayed in potential error messages.
+
+  Raises:
+      ValueError: if operator is not unitary.
+  """
+  if not np.allclose(np.dot(operator, operator.T.conj()),
+                     np.eye(2 ** num_qubits)):
+    raise ValueError('%s is not unitary'%param_name)
+
+
 class Gate(abc.ABC):
   """Representation of a unitary quantum gate.
 
@@ -1417,6 +1564,146 @@ class RotZGate(Gate):
         raise GateNotParsableError
 
 
+class ControlledNotGate(Gate):
+  """A Controlled-Not gate (or "CNOT gate" for short).
+
+  The Controlled-Not gate flips one of the qubits (the "target") dependent on
+  the state of the other qubit (the "control"). Explicitly, the state
+  transformation reads, for the normal qubit order in which the first qubit is
+  the control and the second qubit is the target:
+
+      |00>  ->  |00>
+      |01>  ->  |01>
+      |10>  ->  |11>
+      |11>  ->  |10>
+
+  As a subclass of Gate, ControlledNotGate is immutable.
+  """
+
+  # dict keys are the reverse flag
+  _operators = {
+      # qubit order: (control qubit, target qubit)
+      False: np.array(
+          [
+              [1.0, 0.0, 0.0, 0.0],
+              [0.0, 1.0, 0.0, 0.0],
+              [0.0, 0.0, 0.0, 1.0],
+              [0.0, 0.0, 1.0, 0.0]
+          ],
+          dtype=complex
+      ),
+      # qubit order: (target qubit, control qubit)
+      True: np.array(
+          [
+              [1.0, 0.0, 0.0, 0.0],
+              [0.0, 0.0, 0.0, 1.0],
+              [0.0, 0.0, 1.0, 0.0],
+              [0.0, 1.0, 0.0, 0.0]
+          ],
+          dtype=complex
+      )
+  }
+  _pauli_transforms = {
+      reverse: compute_pauli_transform(operator)
+      for reverse, operator in _operators.items()
+  }
+
+  def __init__(self, *, reverse: bool=False):
+    """Initializes a new ControlledNotGate.
+
+    Args:
+        reverse: a bool specifying the qubit order. For `reverse==False`, the
+            qubits are ordered as (control qubit, target qubit), for
+            `reverse==True` as (target qubit, control qubit).
+
+    Raises:
+      TypeError: if reverse is not a bool and cannot be casted to a bool.
+    """
+
+    reverse = _cast_to_bool(reverse, 'reverse')  # perform type check
+
+    super().__init__(num_qubits=2)
+    self._reverse = reverse
+
+  def is_reversed(self) -> bool:
+    return self._reverse
+
+  def get_operator(self):
+    # implements method from parent class Gate
+    return self._operators[self.is_reversed()].copy()
+
+  def get_pauli_transform(self):
+    # overrides method from parent class Gate
+    return self._pauli_transforms[self.is_reversed()].copy()
+
+  def is_identity(self, phase_invariant=False, **kwargs):
+    # overrides method from parent class Gate
+    #
+    # This implementation avoids to construct the operator which might be a
+    # little more efficient.
+    _cast_to_bool(phase_invariant, 'phase_invariant')  # perform type check
+    return False
+
+  def permute_qubits(self, permutation, inverse=False):
+    # overrides method from parent class Gate
+
+    permutation = np.array(permutation)
+    try:
+      permutation = permutation.astype(int, casting='safe')
+    except TypeError:
+      raise TypeError(
+          'permutation is not a sequence of int [%s cannot be casted safely'
+          ' to int]'%permutation.dtype
+      )
+
+    _cast_to_bool(inverse, 'inverse')  # perform type check
+
+    if np.array_equal(permutation, [0, 1]):
+      return self
+    elif np.array_equal(permutation, [1, 0]):
+      return ControlledNotGate(reverse=not self.is_reversed())
+    else:
+      # permutation cannot be a valid permutation; the following line will raise
+      # an error
+      _check_permutation(permutation, 2)
+
+  @classmethod
+  def parse(cls, gate: Gate) -> 'ControlledNotGate':
+    """Try to parse a gate to a CNOT gate.
+
+    Returns a ControlledNotGate instance equivalent to the specified gate, or
+    raises a GateNotParsableError to indicate that this is not possible.
+
+    Returns:
+        a ControlledNotGate instance that matches the specified input gate up to
+        maximally a global phase. If the input gate is already an instance of
+        ControlledNotGate, then the output is identical to that.
+
+    Raises:
+        TypeError: if gate is not a Gate instance.
+        GateNotParsableError: if no ControlledNotGate instance exists that
+            matches the specified input gate up to maximally a global phase.
+    """
+
+    if not isinstance(gate, Gate):
+      raise TypeError('gate must be a Gate (found type: %s)'
+                      %type(gate).__name__)
+    if isinstance(gate, ControlledNotGate):
+      return gate
+    if gate.get_num_qubits() != 2:
+      raise GateNotParsableError
+
+    # check whether the pauli_transform matches the expectation either for
+    # reverse==False or reverse==True
+    pauli_transform = gate.get_pauli_transform()
+    for reverse in [False, True]:
+      if np.allclose(pauli_transform, cls._pauli_transforms[reverse]):
+        return cls(reverse=reverse)
+
+    # if not already returned, parsing to ControlledNotGate is not possible
+    raise GateNotParsableError
+
+
 class ControlledZGate(Gate):
   """A Controlled-Z gate (or CZ gate for short).
 
@@ -1615,97 +1902,6 @@ class FermionicSimulationGate(Gate):
 class GateNotParsableError(Exception):
   """Indicates that a gate cannot be parsed into a certain gate type."""
   pass
-
-
-def compute_pauli_transform(operator):
-  """Compute the action of a unitary operator on the Pauli operators.
-
-  We consider a density matrix rho under a unitary transformation U (* denotes
-  the matrix product):
-
-      rho -> rho' = U * rho * U^dagger
-
-  Since rho and rho' are Hermitian, they can be written as a linear combination
-  of the Pauli operators. For example, in the single-qubit case, we have:
-
-      rho  = 1/2 * (identity + x  * pauli_x + y  * pauli_y + z  * pauli_z)
-      rho' = 1/2 * (identity + x' * pauli_x + y' * pauli_y + z' * pauli_z)
-
-  The return value of compute_pauli_transform(U) is the matrix which transforms
-  the coefficients (x, y, z) into (x', y', z'):
-
-      [x']   [                 ]   [x]
-      [y'] = [ pauli_transform ] * [y]
-      [z']   [                 ]   [z]
-
-  This also works for more than one qubit. The only aspect that changes is the
-  number of Pauli operators and therefore also the number of coefficients.
-
-  This Pauli transform matrix defines a gate in a phase-invariant way, which can
-  simplify some analysis tasks for a gate, and makes it easier to compare
-  different gates.
-
-  Args:
-      operator: np.ndarray with shape (2 ** num_qubits, 2 ** num_qubits) and
-          dtype complex.
-          The unitary operator acting on a group of qubits.
-
-  Returns:
-      a matrix encoding the transformation of Pauli operators under the
-      specified operation.
-
-  Raises:
-      ValueError: if operator does not have a valid shape or if it is not
-          unitary.
-  """
-
-  operator = np.array(operator)
-  num_qubits = _analyse_operator(operator)
-  _check_unitary(operator, num_qubits)
-
-  # define 1-qubit Pauli group
-  pauli_1 = np.array([
-      [[1.0, 0.0], [0.0, 1.0]],     # identity
-      [[0.0, 1.0], [1.0, 0.0]],     # pauli_x
-      [[0.0, -1.0j], [1.0j, 0.0]],  # pauli_y
-      [[1.0, 0.0], [0.0, -1.0]]     # pauli_z
-  ])
-
-  # construct multi-qubit Pauli group
-  #
-  # e.g. if num_qubits == 2, will be sorted as
-  #
-  #     pauli_n[0] = kron(identity, identity)
-  #     pauli_n[1] = kron(identity, pauli_x)
-  #     pauli_n[2] = kron(identity, pauli_y)
-  #     pauli_n[3] = kron(identity, pauli_z)
-  #     pauli_n[4] = kron(pauli_x, identity)
-  #     pauli_n[5] = kron(pauli_x, pauli_x)
-  #        ...               ...
-  pauli_n = pauli_1
-  for _ in range(num_qubits-1):
-    pauli_n = np.kron(pauli_n, pauli_1)
-
-  # Sets pauli_transform[j,k] to
-  #
-  #     <dot(pauli_n[j+1], operator), dot(operator, pauli_n[k+1])>
-  #     ----------------------------------------------------------
-  #                            2 ** num_qubits
-  #
-  # where <.,.> is the Hilbert-Schmidt product. The first element of pauli_n
-  # which is the n-qubit identity does not need to be included because it is
-  # always mapped to identity.
-  pauli_transform = 0.5 ** num_qubits * np.tensordot(
-      np.matmul(pauli_n[1:], operator),
-      np.matmul(operator, pauli_n[1:]).conj(),
-      axes=[(1, 2), (1, 2)]
-  )
-
-  assert np.allclose(np.imag(pauli_transform), 0.0)
-
-  pauli_transform = np.real(pauli_transform)
-
-  return pauli_transform
 
 
 def permute_qubits(operator,
@@ -1920,60 +2116,29 @@ def extend_operator(operator,
            .reshape(np.full(2, 2 ** num_qubits_out))
 
 
-def _analyse_operator(operator, param_name='operator'):
-  """Checks the properties of an operator and extracts the number of qubits.
+def _cast_to_bool(value, param_name: str) -> bool:
+  """Tries to parse a value into a bool.
+
+  This function accepts only bool-like types (bool, np.bool_). In particular,
+  types like int, float, etc. are rejected (in contrast to `value.__bool__()`).
+  If a value is rejected, this is indicated by a TypeError.
 
   Args:
-    operator: the operator to be analysed.
-    param_name: the parameter name as displayed in potential error messages.
-
-  Returns:
-    returns: number of qubits.
-
-  Raises:
-      ValueError: if operator does not have a valid shape or if it is not
-          unitary.
-  """
-
-  if operator.ndim != 2:
-    raise ValueError(
-        '%s must be a 2D array (found: ndim=%d)'
-        %(param_name, operator.ndim)
-    )
-
-  rows, cols = operator.shape
-
-  if rows != cols:
-    raise ValueError(
-        '%s must be a square matrix [found: shape=(%d, %d)]'
-        %(param_name, rows, cols)
-    )
-
-  num_qubits = rows.bit_length()-1
-
-  if rows != 2 ** num_qubits:
-    raise ValueError(
-        'dimension of %s must be a power of 2 (found: dim=%d)'
-        %(param_name, rows)
-    )
-
-  return num_qubits
-
-
-def _check_unitary(operator, num_qubits, param_name='operator'):
-  """Checks whether an operator is unitary.
-
-  Args:
-      operator: the operator to be checked.
-      num_qubits: the number of qubits for the operator.
+      value: the value to be parsed to bool.
       param_name: the parameter name as displayed in potential error messages.
 
+  Returns:
+      returns: a bool instance equivalent to value.
+
   Raises:
-      ValueError: if operator is not unitary.
+      TypeError: if value is not bool-like.
   """
-  if not np.allclose(np.dot(operator, operator.T.conj()),
-                     np.eye(2 ** num_qubits)):
-    raise ValueError('%s is not unitary'%param_name)
+
+  if isinstance(value, (bool, np.bool_)):
+    return bool(value)
+  else:
+    raise TypeError('%s must be a bool (found type: %s)'
+                    %(param_name, type(value).__name__))
 
 
 def _cast_to_int(num, param_name):

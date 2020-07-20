@@ -2153,6 +2153,302 @@ class RotZGateTest(parameterized.TestCase):
       circuit.RotZGate.parse(42)
 
 
+class ControlledNotGateTest(parameterized.TestCase):
+
+  @parameterized.parameters(False, True)
+  def test_initializer_and_getters(self, reverse_in):
+    # preparation work: construct the ControlledNotGate instance
+    gate = circuit.ControlledNotGate(reverse=reverse_in)
+
+    # check num_qubits
+    num_qubits = gate.get_num_qubits()
+    self.assertIs(type(num_qubits), int)
+    self.assertEqual(num_qubits, 2)
+
+    # check reverse
+    reverse_out = gate.is_reversed()
+    self.assertIs(type(reverse_out), bool)
+    self.assertEqual(reverse_out, reverse_in)
+
+  def test_initializer_type_error(self):
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'reverse must be a bool (found type: float)'):
+      gate = circuit.ControlledNotGate(reverse=47.11)
+
+  def test_operator_and_pauli_transform_normal(self):
+    # preparation work: construct the ControlledNotGate instance
+    gate = circuit.ControlledNotGate(reverse=False)
+
+    # call the methods to be tested
+    operator = gate.get_operator()
+    pauli_transform = gate.get_pauli_transform()
+
+    # check type, dtype and shape of operator
+    self.assertIs(type(operator), np.ndarray)
+    self.assertEqual(operator.dtype, complex)
+    self.assertTupleEqual(operator.shape, (4, 4))
+
+    # check value of operator
+    _check_unitarity(operator, 4)
+    np.testing.assert_allclose(
+        circuit.compute_pauli_transform(operator),
+        circuit.compute_pauli_transform([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0]
+        ]),
+        rtol=1e-5, atol=1e-8
+    )
+
+    # check type, dtype and shape of pauli_transform
+    self.assertIs(type(pauli_transform), np.ndarray)
+    self.assertEqual(pauli_transform.dtype, float)
+    self.assertTupleEqual(pauli_transform.shape, (15, 15))
+
+    # check value of operator
+    np.testing.assert_allclose(  # check orthogonality
+        np.dot(pauli_transform, pauli_transform.T),
+        np.eye(15),
+        rtol=1e-5, atol=1e-8
+    )
+    np.testing.assert_allclose(
+        pauli_transform,
+        circuit.compute_pauli_transform([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0]
+        ]),
+        rtol=1e-5, atol=1e-8
+    )
+
+  def test_operator_and_pauli_transform_reversed(self):
+    # preparation work: construct the ControlledNotGate instance
+    gate = circuit.ControlledNotGate(reverse=True)
+
+    # call the methods to be tested
+    operator = gate.get_operator()
+    pauli_transform = gate.get_pauli_transform()
+
+    # check type, dtype and shape of operator
+    self.assertIs(type(operator), np.ndarray)
+    self.assertEqual(operator.dtype, complex)
+    self.assertTupleEqual(operator.shape, (4, 4))
+
+    # check value of operator
+    _check_unitarity(operator, 4)
+    np.testing.assert_allclose(
+        circuit.compute_pauli_transform(operator),
+        circuit.compute_pauli_transform([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0]
+        ]),
+        rtol=1e-5, atol=1e-8
+    )
+
+    # check type, dtype and shape of pauli_transform
+    self.assertIs(type(pauli_transform), np.ndarray)
+    self.assertEqual(pauli_transform.dtype, float)
+    self.assertTupleEqual(pauli_transform.shape, (15, 15))
+
+    # check value of operator
+    np.testing.assert_allclose(  # check orthogonality
+        np.dot(pauli_transform, pauli_transform.T),
+        np.eye(15),
+        rtol=1e-5, atol=1e-8
+    )
+    np.testing.assert_allclose(
+        pauli_transform,
+        circuit.compute_pauli_transform([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0]
+        ]),
+        rtol=1e-5, atol=1e-8
+    )
+
+  @parameterized.parameters(itertools.product([False, True], repeat=2))
+  def test_identity(self, reverse, phase_invariant):
+    # preparation work: construct the ControlledNotGate instance
+    gate = circuit.ControlledNotGate(reverse=reverse)
+
+    # check type and value for gate.is_identity(...)
+    _check_boolean(
+        self,
+        gate.is_identity(phase_invariant=phase_invariant),
+        False
+    )
+
+  def test_identity_type_error(self):
+    # preparation work: construct the ControlledNotGate instance
+    gate = circuit.ControlledNotGate()
+
+    # check type and value for gate.is_identity(...)
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'phase_invariant must be a bool (found type: float)'):
+      gate.is_identity(phase_invariant=47.11)
+
+  @parameterized.parameters(itertools.product([False, True], repeat=2))
+  def test_permute_qubits_trivial(self, reverse, inverse):
+    # preparation work: construct the ControlledNotGate instance
+    gate_in = circuit.ControlledNotGate(reverse=reverse)
+
+    # call the method to be tested
+    gate_out = gate_in.permute_qubits([0, 1], inverse=inverse)
+
+    # check that gate_out is identical to gate_in
+    self.assertIs(gate_out, gate_in)
+
+  @parameterized.parameters(itertools.product([False, True], repeat=2))
+  def test_permute_qubits_exchanged(self, reverse, inverse):
+    # preparation work: construct the ControlledNotGate instance
+    gate_in = circuit.ControlledNotGate(reverse=reverse)
+
+    # call the method to be tested
+    gate_out = gate_in.permute_qubits([1, 0], inverse=inverse)
+
+    # check type of gate_out
+    self.assertIs(type(gate_out), circuit.ControlledNotGate)
+
+    # check that gate_out is the reversed version of gate_in
+    self.assertNotEqual(gate_out.is_reversed(), reverse)
+    np.testing.assert_allclose(
+        gate_out.get_pauli_transform(),
+        circuit.compute_pauli_transform(circuit.permute_qubits(
+            gate_in.get_operator(),
+            [1, 0]
+        )),
+        rtol=1e-5, atol=1e-8
+    )
+
+  def test_permute_permutation_type_error(self):
+    # preparation work: construct the ControlledNotGate instance
+    gate = circuit.ControlledNotGate()
+
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        r'permutation is not a sequence of int'
+        r' [float64 cannot be casted safely to int]'):
+      gate.permute_qubits([47.11])
+
+  def test_permute_illegal_permutation_ndim_error(self):
+    # preparation work: construct the ControlledNotGate instance
+    gate = circuit.ControlledNotGate()
+
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        r'illegal shape for permutation: (3, 5) [expected: (2,)]'):
+      gate.permute_qubits(np.random.randint(2, size=[3, 5]))
+
+  def test_permute_illegal_permutation_length_error(self):
+    # preparation work: construct the ControlledNotGate instance
+    gate = circuit.ControlledNotGate()
+
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        r'illegal shape for permutation: (4,) [expected: (2,)]'):
+      gate.permute_qubits(np.random.randint(2, size=4))
+
+  def test_permute_permutation_entries_out_of_range_error(self):
+    # preparation work: construct the ControlledNotGate instance
+    gate = circuit.ControlledNotGate()
+
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        r'not a valid permutation: [1 2]'):
+      gate.permute_qubits([1, 2])
+
+  def test_permute_not_actually_a_permutation_error(self):
+    # preparation work: construct the ControlledNotGate instance
+    gate = circuit.ControlledNotGate()
+
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        r'not a valid permutation: [1 1]'):
+      gate.permute_qubits([1, 1])
+
+  def test_permute_inverse_type_error(self):
+    # preparation work: construct the ControlledNotGate instance
+    gate = circuit.ControlledNotGate()
+
+    # check type and value for gate.is_identity(...)
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'inverse must be a bool (found type: float)'):
+      gate.permute_qubits([0, 1], inverse=47.11)
+
+  @parameterized.parameters(itertools.product(
+      [1.0, np.exp(0.42j), -1.0],
+      [
+          np.array([
+              [1.0, 0.0, 0.0, 0.0],
+              [0.0, 1.0, 0.0, 0.0],
+              [0.0, 0.0, 0.0, 1.0],
+              [0.0, 0.0, 1.0, 0.0]
+          ]),
+          np.array([
+              [1.0, 0.0, 0.0, 0.0],
+              [0.0, 0.0, 0.0, 1.0],
+              [0.0, 0.0, 1.0, 0.0],
+              [0.0, 1.0, 0.0, 0.0]
+          ])
+      ]
+  ))
+  def test_parsing_positive(self, global_phase, operator):
+    # preparation work: construct matching MatrixGate gate_in
+    gate_in = circuit.MatrixGate(global_phase * operator)
+
+    # call the function to be tested
+    gate_out = circuit.ControlledNotGate.parse(gate_in)
+
+    # check type of gate_out
+    self.assertIsInstance(gate_out, circuit.ControlledNotGate)
+
+    # check properties of gate_out
+    self.assertEqual(gate_out.get_num_qubits(), 2)
+    np.testing.assert_allclose(
+        gate_out.get_pauli_transform(),
+        gate_in.get_pauli_transform(),
+        rtol=1e-5, atol=1e-8
+    )
+
+  @parameterized.parameters(False, True)
+  def test_parsing_identical(self, reverse):
+    # preparation work: construct ControlledNotGate gate_in
+    gate_in = circuit.ControlledNotGate(reverse=reverse)
+
+    # call the function to be tested
+    gate_out = circuit.ControlledNotGate.parse(gate_in)
+
+    # check gate_out
+    self.assertIs(gate_out, gate_in)
+
+  @parameterized.parameters([
+      circuit.RotZGate(0.42),
+      circuit.PhasedXGate(0.815, 0.4711),
+      circuit.MatrixGate(np.kron(
+          stats.unitary_group.rvs(2),
+          stats.unitary_group.rvs(2)
+      )),
+      circuit.ControlledZGate()
+  ])
+  def test_parsing_negative(self, gate_in):
+    with self.assertRaises(circuit.GateNotParsableError):
+      circuit.ControlledNotGate.parse(gate_in)
+
+  def test_parsing_type_error(self):
+    with self.assertRaisesRegex(
+        TypeError,
+        r'gate must be a Gate \(found type: int\)'):
+      circuit.ControlledNotGate.parse(42)
+
+
 class ControlledZGateTest(parameterized.TestCase):
 
   def test_initializer(self):
