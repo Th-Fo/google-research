@@ -657,6 +657,267 @@ class ExchangeCommutingOperationsTest(parameterized.TestCase):
     self.assertTupleEqual(transformations[3].locations(), (4, 5))
 
 
+class ExpandCnotPairTest(parameterized.TestCase):
+
+  @parameterized.parameters([
+      # ───@───X───
+      #    │   │
+      # ───X───@───
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [2, 1])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [1, 2])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [2, 1])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [1, 2])
+      ]
+  ])
+  def test_positive(self, operation_in_first, operation_in_second):
+    # preparation work: create the rule
+    rule = rules.ExpandCnotPair()
+
+    # call the 1st method to be tested
+    is_accepted = rule.accept(operation_in_first, operation_in_second)
+
+    # check type and value of is_accepted
+    self.assertIs(type(is_accepted), bool)
+    self.assertTrue(is_accepted)
+
+    # call the 2nd method to be tested
+    operations_out_first, operations_out_second = \
+        rule.perform(operation_in_first, operation_in_second)
+
+    # check type and value of operations_out_first
+    self.assertIs(type(operations_out_first), list)
+    self.assertLen(operations_out_first, 2)
+    self.assertIs(operations_out_first[0], operation_in_second)
+    self.assertIs(operations_out_first[1], operation_in_first)
+
+    # check type and value of operations_out_second
+    self.assertIs(type(operations_out_second), list)
+    self.assertLen(operations_out_second, 2)
+    self.assertIs(operations_out_second[0], operation_in_second)
+    self.assertIs(operations_out_second[1], operation_in_first)
+
+    # check that operations_out_first is not operations_out_second
+    self.assertIsNot(operations_out_first, operations_out_second)
+
+  @parameterized.parameters([
+      # ───@───@───
+      #    │   │
+      # ───X───X───
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [1, 2])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 1])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [1, 2])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 1])
+      ],
+      # ───@───────
+      #    │
+      # ───X───@───
+      #        │
+      # ───────X───
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [2, 3])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [3, 2])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [2, 3])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [3, 2])
+      ],
+      # ───X───────
+      #    │
+      # ───@───X───
+      #        │
+      # ───────@───
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [3, 2])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 3])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [3, 2])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 3])
+      ],
+      # ───X───────
+      #    │
+      # ───@───@───
+      #        │
+      # ───────X───
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [2, 3])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [3, 2])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [2, 3])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [3, 2])
+      ],
+      # ───@───────
+      #    │
+      # ───X───X───
+      #        │
+      # ───────@───
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [3, 2])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [1, 2]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 3])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=False), [3, 2])
+      ],
+      [
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 1]),
+          circuit.Operation(circuit.ControlledNotGate(reverse=True), [2, 3])
+      ],
+      # pairs including local gates
+      [
+          circuit.Operation(circuit.PhasedXGate(0.815, 0.4711), [3]),
+          circuit.Operation(circuit.PhasedXGate(0.42, 0.137), [3])
+      ],
+      [
+          circuit.Operation(circuit.RotZGate(0.815), [2]),
+          circuit.Operation(circuit.RotZGate(0.4711), [2])
+      ],
+      [
+          circuit.Operation(circuit.PhasedXGate(0.815, 0.4711), [5]),
+          circuit.Operation(circuit.RotZGate(0.42), [5])
+      ],
+      [
+          circuit.Operation(circuit.PhasedXGate(0.815, 0.4711), [4]),
+          circuit.Operation(circuit.ControlledNotGate(), [3, 4])
+      ],
+      [
+          circuit.Operation(circuit.RotZGate(0.42), [5]),
+          circuit.Operation(circuit.ControlledNotGate(), [4, 5])
+      ]
+  ])
+  def test_negative(self, operation_first, operation_second):
+    # preparation work: create the rule
+    rule = rules.ExpandCnotPair()
+
+    # check type and value for rule.accept(...)
+    is_accepted = rule.accept(operation_first, operation_second)
+    self.assertIs(type(is_accepted), bool)
+    self.assertFalse(is_accepted)
+
+    # check that rule.perform(...) raises a RuleNotApplicableError
+    with self.assertRaises(rules.RuleNotApplicableError):
+      rule.perform(operation_first, operation_second)
+
+  def test_transformations_from_scanner(self):
+    # test circuit:
+    #
+    #     (Q0) ───X───@───────X───X───────
+    #             │   │       │   │
+    #     (Q1) ───@───X───U───@───@───@───
+    #                                 │
+    #     (Q2) ───U───@───X───@───U───X───
+    #                 │   │   │
+    #     (Q3) ───────X───@───X───@───────
+    #                             │
+    #     (Q4) ───U───U───────────X───────
+    #
+    #            1st 2nd 3rd 4th 5th 6th   moment
+
+    # preparation work: create the rule
+    rule = rules.ExpandCnotPair()
+
+    # preparation work: create a circuit scanner
+    scanner = rules.CircuitScanner(circuit.Circuit(5, [
+        # 1st moment
+        circuit.Operation(circuit.ControlledNotGate(), [1, 0]),  # operation 0
+        circuit.Operation(circuit.RotZGate(0.137), [2]),
+        circuit.Operation(circuit.RotZGate(0.42), [4]),
+
+        # 2nd moment
+        circuit.Operation(circuit.ControlledNotGate(), [0, 1]),  # operation 3
+        circuit.Operation(circuit.ControlledNotGate(), [2, 3]),  # operation 4
+        circuit.Operation(circuit.RotZGate(-0.42), [4]),
+
+        # 3rd moment
+        circuit.Operation(circuit.PhasedXGate(0.815, 0.4711), [1]),
+        circuit.Operation(circuit.ControlledNotGate(), [3, 2]),  # operation 7
+
+        # 4th moment
+        circuit.Operation(circuit.ControlledNotGate(), [1, 0]),
+        circuit.Operation(circuit.ControlledNotGate(), [2, 3]),  # operation 9
+
+        # 5th moment
+        circuit.Operation(circuit.ControlledNotGate(), [1, 0]),
+        circuit.Operation(circuit.RotZGate(0.1234), [2]),
+        circuit.Operation(circuit.ControlledNotGate(), [3, 4]),
+
+        # 6th moment
+        circuit.Operation(circuit.ControlledNotGate(), [1, 2])
+    ]))
+
+    # call the method to be tested
+    transformations = tuple(rule.transformations_from_scanner(scanner))
+
+    # check the length of transformations and the types of its elements
+    self.assertLen(transformations, 3)
+    self.assertTrue(all(
+        type(transformation) is transform.PairTransformation  # don't want possible subtypes, so pylint: disable=unidiomatic-typecheck
+        for transformation in transformations
+    ))
+
+    # sort the transformations to make their order canonical
+    transformations = sorted(
+        transformations,
+        key=lambda transformation: transformation.locations()
+    )
+
+    # check the locations to make sure that the correct operations are selected
+    self.assertTupleEqual(transformations[0].locations(), (0, 3))
+    self.assertTupleEqual(transformations[1].locations(), (4, 7))
+    self.assertTupleEqual(transformations[2].locations(), (7, 9))
+
+
 class ExchangePhasedXwithRotZTest(parameterized.TestCase):
 
   @parameterized.parameters([

@@ -372,6 +372,105 @@ class ExchangeCommutingOperations(PairTransformationRule):
       raise RuleNotApplicableError
 
 
+class ExpandCnotPair(PairTransformationRule):
+  """Expands a pair of counter-directional CNOT operations.
+
+  Replaces a pair of counter-directional CNOT operations (on the same qubit
+  pair) as follows:
+
+      ───@───X───      ───X───@───X───@───
+         |   |     ->     |   |   |   |
+      ───X───@───      ───@───X───@───X───
+
+  When combined with an additional CancelOperations rule, this can effect
+  simplifications like this:
+
+      ───@───X───@───X───@───
+         |   |   |   |   |
+      ───X───@───X───@───X───
+
+           ╰───┬───╯
+               │                   (this rule)
+           ╭───┴───────────╮
+
+      ───@───@───X───@───X───X───@───
+         |   |   |   |   |   |   |
+      ───X───X───@───X───@───@───X───
+
+       ╰───────╯       ╰───────╯   (CancelOperations, round 1)
+
+      ───X───@───@───
+         |   |   |
+      ───@───X───X───
+
+           ╰───────╯               (CancelOperations, round 2)
+
+      ───X───
+         |
+      ───@───
+
+  At the first view, it might look a bit strange that this transformation rule
+  is formulated such that it creates 4 out of 2 gates. However, the inverse
+  direction -- which actually simplifies the circuit -- is automatically
+  included if combined with the CancelOperations rule (comparable to the
+  example above). Furthermore, the formulation as-is is advantageous in two
+  ways:
+  * Because it involves only two gates as input, it is simpler to detect
+    candidates in the circuits, to characterize them (for the RL agent), and
+    to implement this rule.
+  * Because this formulation requires the minimally possible condition to be
+    applied, namely just the occurrence of a pair of counter-directional CNOT
+    operations, it is the most flexible one. For example, also the following
+    transformation is automatically captured by this formulation (again when
+    combined with the CancelOperations rule):
+
+        ───@───X───@───       ───X───@───X───
+           |   |   |     <->     |   |   |
+        ───X───@───X───       ───@───X───@───
+
+    If implemented in the inverse direction, this would require a separate
+    rule.
+  """
+
+  def accept(self, operation_first, operation_second):
+    # implements abstract method from parent class PairTransformationRule
+
+    _check_operation(operation_first, variable_name='operation_first')
+    _check_operation(operation_second, variable_name='operation_second')
+
+    try:
+      operation_first, operation_second = parsing.parse_operations(
+          [operation_first, operation_second],
+          circuit.ControlledNotGate, circuit.ControlledNotGate
+      )
+    except circuit.GateNotParsableError:
+      return False
+
+    qubits_first = operation_first.get_qubits()
+    qubits_second = operation_second.get_qubits()
+
+    # check that CNOT operations are counter-directional, taking into account
+    # which of the gates are reversed
+    if (operation_first.get_gate().is_reversed()
+        == operation_second.get_gate().is_reversed()):
+      # if either none or both gates are reversed, the two CNOT operations are
+      # counter-directional if their qubits coincide after reversing
+      return qubits_first == qubits_second[::-1]
+    else:
+      # if one gate is reversed, the other one not, the two CNOT operations are
+      # counter-directional if their qubits coincide (without reversing)
+      return qubits_first == qubits_second
+
+  def perform(self, operation_first, operation_second):
+    # implements abstract method from parent class PairTransformationRule
+
+    if self.accept(operation_first, operation_second):
+      return ([operation_second, operation_first],
+              [operation_second, operation_first])
+    else:
+      raise RuleNotApplicableError
+
+
 class ExchangePhasedXwithRotZ(PairTransformationRule):
   """Exchange the order of a PhasedX and a RotZ gate (modifies the PhasedX gate).
 
@@ -859,3 +958,11 @@ def scan_for_local_groups(circ
   for candidate in candidates:
     if candidate:
       yield transform.focus_local_group(circ, candidate)
+
+
+def _check_operation(candidate, *, variable_name='operation'):
+  if not isinstance(candidate, circuit.Operation):
+    raise TypeError(
+        '%s must be an Operation (found type: %s)'
+        %(variable_name, type(candidate).__name__)
+    )
