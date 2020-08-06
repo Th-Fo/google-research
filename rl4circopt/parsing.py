@@ -467,6 +467,7 @@ def _check_gate_types(gate_types):
 register_parser(circuit.MatrixGate, circuit.MatrixGate.parse)
 register_parser(circuit.PhasedXGate, circuit.PhasedXGate.parse)
 register_parser(circuit.RotZGate, circuit.RotZGate.parse)
+register_parser(circuit.ControlledNotGate, circuit.ControlledNotGate.parse)
 register_parser(circuit.ControlledZGate, circuit.ControlledZGate.parse)
 register_parser(circuit.FermionicSimulationGate,
                 circuit.FermionicSimulationGate.parse)
