@@ -471,6 +471,118 @@ class ExpandCnotPair(PairTransformationRule):
       raise RuleNotApplicableError
 
 
+class DistributeCnotPair(PairTransformationRule):
+  """Distributes a pair of parallel CNOT operations which overlap on one qubit.
+
+  Replaces a pair of parallel CNOT operations (such that the target qubit of
+  the one gate is the control qubit of the other gate) as follows:
+
+      ───@───────      ───────@───────@───────@───
+         |                    |       |       |
+      ───X───@───  ->  ───@───X───@───X───@───X───
+             |            |       |       |
+      ───────X───      ───X───────X───────X───────
+
+  When combined with an additional CancelOperations rule, this can effect
+  simplifications like this:
+
+      ───────@───────@───────
+             |       |
+      ───@───X───@───X───@───
+         |       |       |
+      ───X───────X───────X───
+
+           ╰───┬───╯
+               │                           (this rule)
+           ╭───┴───────────────────╮
+
+      ───────────@───────@───────@───@───────
+                 |       |       |   |
+      ───@───@───X───@───X───@───X───X───@───
+         |   |       |       |           |
+      ───X───X───────X───────X───────────X───
+
+       ╰───────╯               ╰───────╯   (CancelOperations, round 1)
+
+      ───@───────@───────────
+         |       |
+      ───X───@───X───@───@───
+             |       |   |
+      ───────X───────X───X───
+
+                   ╰───────╯               (CancelOperations, round 2)
+
+      ───@───────@───
+         |       |
+      ───X───@───X───
+             |
+      ───────X───────
+
+  At the first view, it might look a bit strange that this transformation rule
+  is formulated such that it creates 6 out of 2 gates. However, the inverse
+  direction -- which actually simplifies the circuit -- is automatically
+  included if combined with the CancelOperations rule (comparable to the example
+  above). Furthermore, the formulation as-is is advantageous in two ways:
+  * Because it involves only two gates as input, it is simpler to detect
+    candidates in the circuits, to characterize them (for the RL agent), and to
+    implement this rule.
+  * Because this formulation requires the minimally possible condition to be
+    applied, namely just the occurrence of a pair of parallel CNOT operations
+    which overlap on one qubit, it is the most flexible one. For example, also
+    the following transformation is automatically captured by this formulation
+    (again when combined with the CancelOperations rule):
+
+        ───@───────@───────       ───────@───────@───
+           |       |                     |       |
+        ───X───@───X───@───  <->  ───@───X───@───X───
+               |       |             |       |
+        ───────X───────X───       ───X───────X───────
+
+    If implemented in the inverse direction, this would require a separate rule.
+  """
+
+  def accept(self, operation_first, operation_second):
+    # implements abstract method from parent class PairTransformationRule
+
+    _check_operation(operation_first, variable_name='operation_first')
+    _check_operation(operation_second, variable_name='operation_second')
+
+    try:
+      operation_first, operation_second = parsing.parse_operations(
+          [operation_first, operation_second],
+          circuit.ControlledNotGate, circuit.ControlledNotGate
+      )
+    except circuit.GateNotParsableError:
+      return False
+
+    # extract control and target qubit from the 1st operation
+    qubits_first = operation_first.get_qubits()
+    if operation_first.get_gate().is_reversed():
+      tgt_qubit_1, src_qubit_1 = qubits_first
+    else:
+      src_qubit_1, tgt_qubit_1 = qubits_first
+
+    # extract control and target qubit from the 2nd operation
+    qubits_second = operation_second.get_qubits()
+    if operation_second.get_gate().is_reversed():
+      tgt_qubit_2, src_qubit_2 = qubits_second
+    else:
+      src_qubit_2, tgt_qubit_2 = qubits_second
+
+    # check that the two operations overlap on exactly one qubit, and that the
+    # target qubit of one gate is the control qubit of the other gate
+    return (src_qubit_1 == tgt_qubit_2) ^ (tgt_qubit_1 == src_qubit_2)
+
+  def perform(self, operation_first, operation_second):
+    # implements abstract method from parent class PairTransformationRule
+
+    if self.accept(operation_first, operation_second):
+      return ([operation_second, operation_first, operation_second],
+              [operation_first, operation_second, operation_first])
+    else:
+      raise RuleNotApplicableError
+
+
 class ExchangePhasedXwithRotZ(PairTransformationRule):
   """Exchange the order of a PhasedX and a RotZ gate (modifies the PhasedX gate).
 
