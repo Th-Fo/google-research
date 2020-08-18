@@ -441,6 +441,24 @@ class InvertCnotTest(parameterized.TestCase):
     self.assertTupleEqual(transformations[0].locations(), (1,))
     self.assertTupleEqual(transformations[1].locations(), (4,))
 
+  def test_accept_type_error(self):
+    # preparation work
+    rule = rules.InvertCnot(UncallableArchitecture())
+
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation must be an Operation (found type: int)'):
+      rule.accept(42)
+
+  def test_perform_type_error(self):
+    # preparation work
+    rule = rules.InvertCnot(UncallableArchitecture())
+
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation must be an Operation (found type: float)'):
+      rule.perform(47.11)
+
 
 class CancelOperationsTest(parameterized.TestCase):
 
@@ -549,6 +567,40 @@ class CancelOperationsTest(parameterized.TestCase):
     self.assertTupleEqual(transformations[0].locations(), (1, 3))
     self.assertTupleEqual(transformations[1].locations(), (5, 6))
 
+  def test_accept_type_error(self):
+    # preparation work
+    rule = rules.CancelOperations()
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: int)'):
+      rule.accept(42, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: float)'):
+      rule.accept(operation, 47.11)
+
+  def test_perform_type_error(self):
+    # preparation work
+    rule = rules.CancelOperations()
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: float)'):
+      rule.perform(47.11, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: int)'):
+      rule.perform(operation, 42)
+
 
 class ExchangeCommutingOperationsTest(parameterized.TestCase):
 
@@ -655,6 +707,40 @@ class ExchangeCommutingOperationsTest(parameterized.TestCase):
     self.assertTupleEqual(transformations[1].locations(), (0, 2))
     self.assertTupleEqual(transformations[2].locations(), (1, 4))
     self.assertTupleEqual(transformations[3].locations(), (4, 5))
+
+  def test_accept_type_error(self):
+    # preparation work
+    rule = rules.ExchangeCommutingOperations()
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: int)'):
+      rule.accept(42, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: float)'):
+      rule.accept(operation, 47.11)
+
+  def test_perform_type_error(self):
+    # preparation work
+    rule = rules.ExchangeCommutingOperations()
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: float)'):
+      rule.perform(47.11, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: int)'):
+      rule.perform(operation, 42)
 
 
 class ExpandCnotPairTest(parameterized.TestCase):
@@ -916,6 +1002,40 @@ class ExpandCnotPairTest(parameterized.TestCase):
     self.assertTupleEqual(transformations[0].locations(), (0, 3))
     self.assertTupleEqual(transformations[1].locations(), (4, 7))
     self.assertTupleEqual(transformations[2].locations(), (7, 9))
+
+  def test_accept_type_error(self):
+    # preparation work
+    rule = rules.ExpandCnotPair()
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: int)'):
+      rule.accept(42, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: float)'):
+      rule.accept(operation, 47.11)
+
+  def test_perform_type_error(self):
+    # preparation work
+    rule = rules.ExpandCnotPair()
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: float)'):
+      rule.perform(47.11, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: int)'):
+      rule.perform(operation, 42)
 
 
 class DistributeCnotPairTest(parameterized.TestCase):
@@ -1184,6 +1304,40 @@ class DistributeCnotPairTest(parameterized.TestCase):
     self.assertTupleEqual(transformations[2].locations(), (7, 9))
     self.assertTupleEqual(transformations[3].locations(), (9, 12))
 
+  def test_accept_type_error(self):
+    # preparation work
+    rule = rules.DistributeCnotPair()
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: int)'):
+      rule.accept(42, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: float)'):
+      rule.accept(operation, 47.11)
+
+  def test_perform_type_error(self):
+    # preparation work
+    rule = rules.DistributeCnotPair()
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: float)'):
+      rule.perform(47.11, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: int)'):
+      rule.perform(operation, 42)
+
 
 class ExchangePhasedXwithRotZTest(parameterized.TestCase):
 
@@ -1334,6 +1488,40 @@ class ExchangePhasedXwithRotZTest(parameterized.TestCase):
     self.assertTupleEqual(transformations[0].locations(), (1, 3))
     self.assertTupleEqual(transformations[1].locations(), (3, 4))
 
+  def test_accept_type_error(self):
+    # preparation work
+    rule = rules.ExchangePhasedXwithRotZ()
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: int)'):
+      rule.accept(42, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: float)'):
+      rule.accept(operation, 47.11)
+
+  def test_perform_type_error(self):
+    # preparation work
+    rule = rules.ExchangePhasedXwithRotZ()
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: float)'):
+      rule.perform(47.11, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: int)'):
+      rule.perform(operation, 42)
+
 
 class ExchangePhasedXwithControlledZTest(parameterized.TestCase):
 
@@ -1458,6 +1646,40 @@ class ExchangePhasedXwithControlledZTest(parameterized.TestCase):
     # check the locations to make sure that the correct operations are selected
     self.assertTupleEqual(transformations[0].locations(), (0, 2))
     self.assertTupleEqual(transformations[1].locations(), (2, 5))
+
+  def test_accept_type_error(self):
+    # preparation work
+    rule = rules.ExchangePhasedXwithControlledZ(UncallableArchitecture())
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: int)'):
+      rule.accept(42, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: float)'):
+      rule.accept(operation, 47.11)
+
+  def test_perform_type_error(self):
+    # preparation work
+    rule = rules.ExchangePhasedXwithControlledZ(UncallableArchitecture())
+    operation = _random_operation(47, 11)
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_first must be an Operation (found type: float)'):
+      rule.perform(47.11, operation)
+
+    # check type error in 2nd argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operation_second must be an Operation (found type: int)'):
+      rule.perform(operation, 42)
 
 
 class CompressLocalOperationsTest(parameterized.TestCase):
@@ -1707,6 +1929,40 @@ class CompressLocalOperationsTest(parameterized.TestCase):
 
     # check the length of transformations
     self.assertEmpty(transformations)
+
+  def test_accept_type_error(self):
+    # preparation work
+    rule = rules.CompressLocalOperations(UncallableArchitecture())
+    operations = [
+        _random_operation(47, 11),
+        True,
+        _random_operation(47, 11),
+        _random_operation(47, 11),
+        42
+    ]
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operations is not a sequence of Operations (found types: bool, int)'):
+      rule.accept(operations)
+
+  def test_perform_type_error(self):
+    # preparation work
+    rule = rules.CompressLocalOperations(UncallableArchitecture())
+    operations = [
+        _random_operation(47, 11),
+        47.11,
+        _random_operation(47, 11),
+        _random_operation(47, 11),
+        'hello'
+    ]
+
+    # check type error in 1st argument
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operations is not a sequence of Operations (found types: float, str)'):
+      rule.perform(operations)
 
 
 class CircuitScannerTest(parameterized.TestCase):

@@ -204,6 +204,9 @@ class PointTransformationRule(TransformationRule):
     Returns:
         a bool indicating whether this transformation rule is applicable to the
         specified operation.
+
+    Raises:
+        TypeError: if operation is not an Operation.
     """
     pass
 
@@ -219,6 +222,7 @@ class PointTransformationRule(TransformationRule):
         a sequence containing the modified operations.
 
     Raises:
+        TypeError: if operation is not an Operation.
         RuleNotApplicableError: if this transformation rule cannot be applied to
             the specified operation. This exception is raised iff
             `self.accept(operation)` gives False.
@@ -246,6 +250,9 @@ class InvertCnot(PointTransformationRule):
 
   def accept(self, operation):
     # implements abstract method from parent class PointTransformationRule
+
+    # check type of operation, otherwise raise TypeError
+    _check_operation(operation, variable_name='operation')
 
     gate = operation.get_gate()
     return gate == self.cnot or gate == self.inverted_cnot
@@ -300,6 +307,9 @@ class PairTransformationRule(TransformationRule):
     Returns:
         a bool indicating whether this transformation rule is applicable to the
         specified pair of operations.
+
+    Raises:
+        TypeError: if operation_first or operation_second is not an Operation.
     """
     pass
 
@@ -323,6 +333,7 @@ class PairTransformationRule(TransformationRule):
             modified operations.
 
     Raises:
+        TypeError: if operation_first or operation_second is not an Operation.
         RuleNotApplicableError: if this transformation rule cannot be applied to
             the specified pair of operations. This exception is raised iff
             `self.accept(operation_first, operation_second)` gives False.
@@ -343,6 +354,12 @@ class CancelOperations(PairTransformationRule):
 
   def accept(self, operation_first, operation_second):
     # implements abstract method from parent class PairTransformationRule
+
+    # check type of operation_first and operation_second, otherwise raise
+    # TypeError
+    _check_operation(operation_first, variable_name='operation_first')
+    _check_operation(operation_second, variable_name='operation_second')
+
     if operation_first.commutes_trivially_with(operation_second):
       raise RuntimeError()  # cmp. TODO at the beginning of this file
     return operation_first.cancels_with(operation_second, phase_invariant=True)
@@ -360,6 +377,12 @@ class ExchangeCommutingOperations(PairTransformationRule):
 
   def accept(self, operation_first, operation_second):
     # implements abstract method from parent class PairTransformationRule
+
+    # check type of operation_first and operation_second, otherwise raise
+    # TypeError
+    _check_operation(operation_first, variable_name='operation_first')
+    _check_operation(operation_second, variable_name='operation_second')
+
     if operation_first.commutes_trivially_with(operation_second):
       raise RuntimeError()  # cmp. TODO at the beginning of this file
     return operation_first.commutes_with(operation_second, phase_invariant=True)
@@ -435,6 +458,8 @@ class ExpandCnotPair(PairTransformationRule):
   def accept(self, operation_first, operation_second):
     # implements abstract method from parent class PairTransformationRule
 
+    # check type of operation_first and operation_second, otherwise raise
+    # TypeError
     _check_operation(operation_first, variable_name='operation_first')
     _check_operation(operation_second, variable_name='operation_second')
 
@@ -544,6 +569,8 @@ class DistributeCnotPair(PairTransformationRule):
   def accept(self, operation_first, operation_second):
     # implements abstract method from parent class PairTransformationRule
 
+    # check type of operation_first and operation_second, otherwise raise
+    # TypeError
     _check_operation(operation_first, variable_name='operation_first')
     _check_operation(operation_second, variable_name='operation_second')
 
@@ -601,6 +628,11 @@ class ExchangePhasedXwithRotZ(PairTransformationRule):
   def accept(self, operation_first, operation_second):
     # implements abstract method from parent class PairTransformationRule
 
+    # check type of operation_first and operation_second, otherwise raise
+    # TypeError
+    _check_operation(operation_first, variable_name='operation_first')
+    _check_operation(operation_second, variable_name='operation_second')
+
     if operation_first.commutes_trivially_with(operation_second):
       raise RuntimeError()  # cmp. TODO at the beginning of this file
 
@@ -617,6 +649,11 @@ class ExchangePhasedXwithRotZ(PairTransformationRule):
 
   def perform(self, operation_first, operation_second):
     # implements abstract method from parent class PairTransformationRule
+
+    # check type of operation_first and operation_second, otherwise raise
+    # TypeError
+    _check_operation(operation_first, variable_name='operation_first')
+    _check_operation(operation_second, variable_name='operation_second')
 
     if operation_first.commutes_trivially_with(operation_second):
       raise RuntimeError()  # cmp. TODO at the beginning of this file
@@ -677,6 +714,11 @@ class ExchangePhasedXwithControlledZ(PairTransformationRule):
 
   def accept(self, operation_first, operation_second):
     # implements abstract method from parent class PairTransformationRule
+
+    # check type of operation_first and operation_second, otherwise raise
+    # TypeError
+    _check_operation(operation_first, variable_name='operation_first')
+    _check_operation(operation_second, variable_name='operation_second')
 
     if operation_first.commutes_trivially_with(operation_second):
       raise RuntimeError()  # cmp. TODO at the beginning of this file
@@ -753,6 +795,9 @@ class LocalGroupTransformationRule(TransformationRule):
     Returns:
         a bool indicating whether this transformation rule is applicable to the
         specified group of operations.
+
+    Raises:
+        TypeError: if operations is not a sequence of Operations.
     """
     pass
 
@@ -767,6 +812,9 @@ class LocalGroupTransformationRule(TransformationRule):
 
     Returns:
         a sequence containing the modified operations.
+
+    Raises:
+        TypeError: if operations is not a sequence of Operations.
     """
     pass
 
@@ -779,6 +827,22 @@ class CompressLocalOperations(LocalGroupTransformationRule):
 
   def accept(self, operations):
     # implements abstract method from parent class LocalGroupTransformationRule
+
+    operations = tuple(operations)
+
+    if not all(isinstance(operation, circuit.Operation)
+               for operation in operations):
+      illegal_types = set(
+          type(operation)
+          for operation in operations
+          if not isinstance(operation, circuit.Operation)
+      )
+      raise TypeError(
+          'operations is not a sequence of Operations (found types: %s)'
+          %', '.join(sorted(illegal_type.__name__
+                            for illegal_type in illegal_types))
+      )
+
     gates = [operation.get_gate() for operation in operations]
 
     # check whether all operations are local and act on the same gate
@@ -793,6 +857,8 @@ class CompressLocalOperations(LocalGroupTransformationRule):
 
   def perform(self, operations):
     # implements abstract method from parent class LocalGroupTransformationRule
+
+    operations = tuple(operations)
 
     if not self.accept(operations):
       raise RuleNotApplicableError
@@ -1073,6 +1139,15 @@ def scan_for_local_groups(circ
 
 
 def _check_operation(candidate, *, variable_name='operation'):
+  """Checks whether an object is an Operation instance.
+
+  Args:
+      candidate: the object whose type is to be checked.
+      variable_name: the variable name as displayed in potential error messages.
+
+  Raises:
+      TypeError: if candidate is not an Operation.
+  """
   if not isinstance(candidate, circuit.Operation):
     raise TypeError(
         '%s must be an Operation (found type: %s)'
