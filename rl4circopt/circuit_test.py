@@ -920,6 +920,218 @@ class OperationTest(parameterized.TestCase):
         r'unexpected type for other: range \(expected an Operation\)'):
       operation.commutes_trivially_with(range(42))
 
+  def test_merge_local_operations(self):
+    # preparation work: construct four local random gates
+    gate_0 = _random_matrix_gate(1)
+    gate_1 = _random_matrix_gate(1)
+    gate_2 = _random_matrix_gate(1)
+    gate_3 = _random_matrix_gate(1)
+
+    # preparation work: compute the operator of the expected gate
+    operator_expected = np.dot(gate_3.get_operator(), gate_2.get_operator())
+    operator_expected = np.dot(operator_expected, gate_1.get_operator())
+    operator_expected = np.dot(operator_expected, gate_0.get_operator())
+
+    # call the function to be tested
+    operation_out = circuit.Operation.merge(
+        circuit.Operation(gate_0, [42]),
+        circuit.Operation(gate_1, [42]),
+        circuit.Operation(gate_2, [42]),
+        circuit.Operation(gate_3, [42])
+    )
+
+    # check type of operation_out
+    self.assertIs(type(operation_out), circuit.Operation)
+
+    # check value of operation_out
+    self.assertEqual(operation_out.get_num_qubits(), 1)
+    np.testing.assert_allclose(
+        operation_out.get_gate().get_operator(),
+        operator_expected,
+        rtol=1e-5, atol=1e-8
+    )
+    self.assertTupleEqual(operation_out.get_qubits(), (42,))
+
+  def test_merge_two_qubit_operations(self):
+    # example circuit:
+    #
+    #     (Q0) ───0───────────────────────6───────
+    #             |                       |          (qubit 1 omitted)
+    #     (Q2) ───0───1───────────4───────6───────
+    #                 |           |
+    #     (Q3) ───────1───────3───4───5───────────
+    #                         |       |              (qubits 4 and 5 omitted)
+    #     (Q6) ───────────2───3───────5───────7───
+    #                     |                   |
+    #     (Q7) ───────────2───────────────────7───
+
+    # preparation work: construct eight local random gates
+    gate_0 = _random_matrix_gate(2)
+    gate_1 = _random_matrix_gate(2)
+    gate_2 = _random_matrix_gate(2)
+    gate_3 = _random_matrix_gate(2)
+    gate_4 = _random_matrix_gate(2)
+    gate_5 = _random_matrix_gate(2)
+    gate_6 = _random_matrix_gate(2)
+    gate_7 = _random_matrix_gate(2)
+
+    # preparation work: compute the operator of the expected gate
+    operator_expected = np.dot(
+        np.kron(np.eye(8), gate_7.get_operator()),
+        np.kron(gate_6.get_operator(), np.eye(8))
+    )
+    operator_expected = np.dot(
+        operator_expected,
+        np.kron(np.kron(np.eye(4), gate_5.get_operator()), np.eye(2))
+    )
+    operator_expected = np.dot(
+        operator_expected,
+        np.kron(np.kron(np.eye(2), gate_4.get_operator()), np.eye(4))
+    )
+    operator_expected = np.dot(
+        operator_expected,
+        np.kron(np.kron(np.eye(4), gate_3.get_operator()), np.eye(2))
+    )
+    operator_expected = np.dot(
+        operator_expected,
+        np.kron(np.eye(8), gate_2.get_operator())
+    )
+    operator_expected = np.dot(
+        operator_expected,
+        np.kron(np.kron(np.eye(2), gate_1.get_operator()), np.eye(4))
+    )
+    operator_expected = np.dot(
+        operator_expected,
+        np.kron(gate_0.get_operator(), np.eye(8))
+    )
+
+    # call the function to be tested
+    operation_out = circuit.Operation.merge(
+        circuit.Operation(gate_0, [0, 2]),
+        circuit.Operation(gate_1, [2, 3]),
+        circuit.Operation(gate_2, [6, 7]),
+        circuit.Operation(gate_3, [3, 6]),
+        circuit.Operation(gate_4, [2, 3]),
+        circuit.Operation(gate_5, [3, 6]),
+        circuit.Operation(gate_6, [0, 2]),
+        circuit.Operation(gate_7, [6, 7])
+    )
+
+    # check type of operation_out
+    self.assertIs(type(operation_out), circuit.Operation)
+
+    # check value of operation_out
+    self.assertEqual(operation_out.get_num_qubits(), 5)
+    np.testing.assert_allclose(
+        operation_out.get_gate().get_operator(),
+        operator_expected,
+        rtol=1e-5, atol=1e-8
+    )
+    self.assertTupleEqual(operation_out.get_qubits(), (0, 2, 3, 6, 7))
+
+  def test_merge_to_controlled_not(self):
+    # checks whether the operation sequence
+    #
+    #     ───────@───────
+    #            |
+    #     ───H───@───H───
+    #
+    # is correctly merged to a CNOT gate
+    #
+    #     ───@───
+    #        |
+    #     ───X───
+
+    # preparation work: construct four local random gates
+    hadamard_gate = circuit.MatrixGate([
+        [np.sqrt(0.5), np.sqrt(0.5)],
+        [np.sqrt(0.5), -np.sqrt(0.5)]
+    ])
+
+    # call the function to be tested
+    operation_out = circuit.Operation.merge(
+        circuit.Operation(hadamard_gate, [7]),
+        circuit.Operation(circuit.ControlledZGate(), [5, 7]),
+        circuit.Operation(hadamard_gate, [7])
+    )
+
+    # check type of operation_out
+    self.assertIs(type(operation_out), circuit.Operation)
+
+    # check value of operation_out
+    self.assertEqual(operation_out.get_num_qubits(), 2)
+    np.testing.assert_allclose(
+        operation_out.get_gate().get_operator(),
+        [  # CNOT gate
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0, 0.0]
+        ],
+        rtol=1e-5, atol=1e-8
+    )
+    self.assertTupleEqual(operation_out.get_qubits(), (5, 7))
+
+  def test_merge_to_swap(self):
+    # checks whether the operation sequence
+    #
+    #     ───@───X───@───
+    #        |   |   |
+    #     ───X───@───X───
+    #
+    # is correctly merged to a SWAP gate
+
+    # call the function to be tested
+    operation_out = circuit.Operation.merge(
+        circuit.Operation(circuit.ControlledNotGate(), [5, 7]),
+        circuit.Operation(circuit.ControlledNotGate(), [7, 5]),
+        circuit.Operation(circuit.ControlledNotGate(), [5, 7])
+    )
+
+    # check type of operation_out
+    self.assertIs(type(operation_out), circuit.Operation)
+
+    # check value of operation_out
+    self.assertEqual(operation_out.get_num_qubits(), 2)
+    np.testing.assert_allclose(
+        operation_out.get_gate().get_operator(),
+        [  # SWAP gate
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0]
+        ],
+        rtol=1e-5, atol=1e-8
+    )
+    self.assertTupleEqual(operation_out.get_qubits(), (5, 7))
+
+  @parameterized.parameters([
+      circuit.Operation(_random_matrix_gate(2), [47, 11]),
+      circuit.Operation(_random_matrix_gate(1), [42])
+  ])
+  def test_merge_trivial(self, operation_in):
+    # call the function to be tested
+    operation_out = circuit.Operation.merge(operation_in)
+
+    # check operation_out
+    self.assertIs(operation_out, operation_in)
+
+  def test_merge_type_error(self):
+    # preparation work: construct two Operations
+    operation_1 = circuit.Operation(_random_matrix_gate(2), [47, 11])
+    operation_2 = circuit.Operation(_random_matrix_gate(1), [42])
+
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'operations are not all Operations (found types: bool, float)'):
+      circuit.Operation.merge(operation_1, True, 0.815, operation_2)
+
+  def test_merge_value_error_no_arguments(self):
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        'merge requires at least one operation'):
+      circuit.Operation.merge()
+
 
 class MatrixGateTest(parameterized.TestCase):
 

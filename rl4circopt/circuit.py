@@ -521,7 +521,7 @@ class Operation:
       return (self.get_gate().is_identity(phase_invariant=phase_invariant)
               and other.get_gate().is_identity(phase_invariant=phase_invariant))
     else:
-      self_gate, other_gate = self._fit_together(self, other)
+      (self_gate, other_gate), _ = self._fit_together(self, other)
       return self_gate.cancels_with(
           other_gate,
           phase_invariant=phase_invariant,
@@ -552,7 +552,7 @@ class Operation:
     if self.commutes_trivially_with(other):
       return True
     else:
-      self_gate, other_gate = self._fit_together(self, other)
+      (self_gate, other_gate), _ = self._fit_together(self, other)
       return self_gate.commutes_with(other_gate, *args, **kwargs)
 
   @staticmethod
@@ -588,7 +588,10 @@ class Operation:
         *operations: the group of operations.
 
     Returns:
-        a list of gates.
+        gates: a list of Gates. For each index n, gates[n] corresponds to
+            operations[n].get_gate(), but all acting on a conformal (ordered)
+            set of qubits.
+        qubits: a list of int representing all involved qubits.
     """
 
     # extract the essential information from the operations
@@ -615,10 +618,61 @@ class Operation:
     }.get
 
     # bring the gates into a common format
-    return [
+    gates = [
         gate.apply_on(tuple(map(reassign_qubits, qubits)), num_old_qubits)
         for qubits, gate in operations
     ]
+
+    return gates, old_qubits
+
+  @classmethod
+  def merge(cls, *operations: 'Operation'):
+    """Merges several operations into one.
+
+    Args:
+        operations: a (non-empty) sequence of Operation instances to be merged.
+
+    Returns:
+        one Operation instance which is equivalent to the specified list of
+        input operations. If exactly one operation is given as an argument, the
+        output is identical to it.
+
+    Raises:
+        TypeError: if not all operations are instances of Operation.
+        ValueError: if no operation is specified.
+    """
+    if not operations:
+      raise ValueError('merge requires at least one operation')
+    if not all(isinstance(operation, cls) for operation in operations):
+      illegal_types = set(
+          type(operation)
+          for operation in operations
+          if not isinstance(operation, cls)
+      )
+      raise TypeError(
+          'operations are not all Operations (found types: %s)'
+          %', '.join(sorted(illegal_type.__name__
+                            for illegal_type in illegal_types))
+      )
+
+    try:
+      operation, = operations
+    except ValueError:
+      # multi-operation sequence
+
+      gates, qubits = cls._fit_together(*operations)
+
+      operator = gates[0].get_operator()
+      for gate in gates[1:]:
+        # new operators need to be multiplied from the left, such that they are
+        # applied later on a quantum state which is represented by a vector
+        # multiplied from the right
+        operator = np.dot(gate.get_operator(), operator)
+
+      return cls(MatrixGate(operator), qubits)
+    else:
+      # single-operation sequence
+      return operation
 
 
 def compute_pauli_transform(operator):
