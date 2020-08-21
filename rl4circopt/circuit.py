@@ -907,6 +907,46 @@ class Gate(abc.ABC):
           **kwargs
       )
 
+  def is_identical_to(self,
+                      other,
+                      phase_invariant=False,
+                      **kwargs):
+    """Checks whether two gates are identical to each other.
+
+    Args:
+        other: the other gate.
+        phase_invariant: specifies whether the complex phase should be taken
+            into account. This makes a difference if this gate equals
+            exp(i*phi)*other where exp(i*phi) is a non-trivial complex phase.
+            For such a pair of gates, cancels_with(...) will return False (True)
+            if phase_invariant==False (phase_invariant==True).
+        **kwargs: keyword arguments passed to np.isclose(...) or
+            np.allclose(...).
+
+    Returns:
+        a bool indicating whether this gate is identical to the other one.
+
+    Raises:
+        TypeError: if other is not a Gate.
+        ValueError: if the number of qubits does not match.
+    """
+
+    # potentially raises TypeError or ValueError
+    self._check_compatible_gate(other, 'equality')
+
+    if phase_invariant:
+      return np.allclose(
+          self.get_pauli_transform(),
+          other.get_pauli_transform(),
+          **kwargs
+      )
+    else:
+      return np.allclose(
+          self.get_operator(),
+          other.get_operator(),
+          **kwargs
+      )
+
   def cancels_with(self,
                    other,
                    phase_invariant=False,
@@ -1146,6 +1186,9 @@ class Gate(abc.ABC):
       ))
 
   def __eq__(self, other, **kwargs):
+    # deprecated, is_identical_to(...) should be used instead which is more
+    # specific
+
     if not isinstance(other, Gate):
       return False
     if self.get_num_qubits() != other.get_num_qubits():

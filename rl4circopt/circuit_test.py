@@ -1306,6 +1306,106 @@ class MatrixGateTest(parameterized.TestCase):
     )
 
   @parameterized.parameters(1, 2, 3)
+  def test_is_identical_to_always(self, num_qubits):
+    # preparation work: generate a random unitary
+    operator = stats.unitary_group.rvs(2 ** num_qubits)
+
+    # preparation work: construct two identical MatrixGates
+    gate_a = circuit.MatrixGate(operator)
+    gate_b = circuit.MatrixGate(operator)
+
+    _check_boolean(
+        self,
+        gate_a.is_identical_to(gate_b, phase_invariant=False),
+        True
+    )
+    _check_boolean(
+        self,
+        gate_a.is_identical_to(gate_b, phase_invariant=True),
+        True
+    )
+
+  @parameterized.parameters(1, 2, 3)
+  def test_is_identical_to_trivial(self, num_qubits):
+    # preparation work: construct a random MatrixGate
+    gate = circuit.MatrixGate(stats.unitary_group.rvs(2 ** num_qubits))
+
+    _check_boolean(
+        self,
+        gate.is_identical_to(gate, phase_invariant=False),
+        True
+    )
+    _check_boolean(
+        self,
+        gate.is_identical_to(gate, phase_invariant=True),
+        True
+    )
+
+  @parameterized.parameters(1, 2, 3)
+  def test_is_identical_to_only_phase_invariant(self, num_qubits):
+    # preparation work: generate a random unitary
+    operator = stats.unitary_group.rvs(2 ** num_qubits)
+
+    # preparation work: construct two MatrixGates which agree only up to a
+    # global complex phase
+    gate_a = circuit.MatrixGate(operator)
+    gate_b = circuit.MatrixGate(np.exp(2.0j*np.pi*np.random.rand()) * operator)
+
+    _check_boolean(
+        self,
+        gate_a.is_identical_to(gate_b, phase_invariant=False),
+        False
+    )
+    _check_boolean(
+        self,
+        gate_a.is_identical_to(gate_b, phase_invariant=True),
+        True
+    )
+
+  @parameterized.parameters(1, 2, 3)
+  def test_is_identical_to_never(self, num_qubits):
+    # preparation work: generate a random unitary
+    operator = stats.unitary_group.rvs(2 ** num_qubits)
+
+    # preparation work: construct two non-identical MatrixGates
+    gate_a = circuit.MatrixGate(operator)
+    gate_b = circuit.MatrixGate(np.roll(operator, 1, axis=0))
+
+    _check_boolean(
+        self,
+        gate_a.is_identical_to(gate_b, phase_invariant=False),
+        False
+    )
+    _check_boolean(
+        self,
+        gate_a.is_identical_to(gate_b, phase_invariant=True),
+        False
+    )
+
+  @parameterized.parameters(False, True)
+  def test_is_identical_to_type_error(self, phase_invariant):
+    # preparation work: construct a MatrixGate
+    gate = circuit.MatrixGate(np.eye(2))
+
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'unexpected type for other: range (expected a Gate)'):
+      gate.is_identical_to(range(42), phase_invariant=phase_invariant)
+
+  @parameterized.parameters(False, True)
+  def test_is_identical_to_num_qubits_error(self, phase_invariant):
+    # preparation work: construct two MatrixGates which differ in their number
+    # of qubits
+    gate_a = circuit.MatrixGate(np.eye(2))
+    gate_b = circuit.MatrixGate(np.eye(4))
+
+    with self.assertRaisesWithLiteralMatch(
+        ValueError,
+        'equality relation not well-defined because the number of qubits does'
+        ' not match (1 vs 2)'):
+      gate_a.is_identical_to(gate_b, phase_invariant=phase_invariant)
+
+  @parameterized.parameters(1, 2, 3)
   def test_cancels_always(self, num_qubits):
     # generate a random unitary
     operator = stats.unitary_group.rvs(2 ** num_qubits)
