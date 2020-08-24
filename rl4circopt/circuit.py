@@ -491,6 +491,52 @@ class Operation:
 
     return set(self.get_qubits()).isdisjoint(other.get_qubits())
 
+  def is_identical_to(self,
+                      other: 'Operation',
+                      phase_invariant: bool=False,
+                      **kwargs):
+    """Checks whether two operations are identical to each other.
+
+    Args:
+        other: the other operation.
+        phase_invariant: specifies whether the complex phase should be taken
+            into account. This makes a difference if this gate equals
+            exp(i*phi)*other where exp(i*phi) is a non-trivial complex phase.
+            For such a pair of gates, cancels_with(...) will return False (True)
+            if phase_invariant==False (phase_invariant==True).
+        **kwargs: keyword arguments passed to Gate.is_identical_to(...).
+
+    Returns:
+        a bool indicating whether this operation is identical to the other one.
+
+    Raises:
+        TypeError: if other is not an Operation.
+    """
+    if not isinstance(other, Operation):
+      raise TypeError('unexpected type for other: %s (expected an Operation)'
+                      %type(other).__name__)
+
+    if self.commutes_trivially_with(other):
+      # operations are identical if both are identity (up to a global phase) and
+      # in addition, unless phase_invariant, the global phase matches
+      return (self.get_gate().is_identity(phase_invariant=True)
+              and other.get_gate().is_identity(phase_invariant=True)
+              and (phase_invariant or
+                   bool(np.isclose(
+                      _mean_phase(self),
+                      _mean_phase(other),
+                      **kwargs
+                   ))
+                  )
+             )
+    else:
+      (self_gate, other_gate), _ = self._fit_together(self, other)
+      return self_gate.is_identical_to(
+          other_gate,
+          phase_invariant=phase_invariant,
+          **kwargs
+      )
+
   @functools.lru_cache(maxsize=10000)
   def cancels_with(self,
                    other,
@@ -2278,3 +2324,7 @@ def _check_permutation(permutation, length):
                      %(permutation.shape, length))
   if not np.array_equal(np.sort(permutation), np.arange(length)):
     raise ValueError('not a valid permutation: %s'%permutation)
+
+def _mean_phase(operation):
+  return (0.5**operation.get_num_qubits()
+          * np.trace(operation.get_gate().get_operator()))

@@ -920,6 +920,348 @@ class OperationTest(parameterized.TestCase):
         r'unexpected type for other: range \(expected an Operation\)'):
       operation.commutes_trivially_with(range(42))
 
+  @parameterized.parameters(
+      circuit.RotZGate(0.42),
+      circuit.PhasedXGate(0.47, 0.11),
+      circuit.ControlledZGate(),
+      circuit.MatrixGate(stats.unitary_group.rvs(4)),
+      circuit.MatrixGate(stats.unitary_group.rvs(8))
+  )
+  def test_is_identical_to_on_same_qubits(self, gate):
+    # preparation work: choose some random qubits in range(20)
+    qubits = np.random.permutation(20)[:gate.get_num_qubits()]
+
+    # preparation work: construct an Operation with the given gate
+    operation_given = circuit.Operation(gate, qubits)
+
+    # check the method to be tested for operation_given against itself
+    _check_boolean(
+        self,
+        operation_given.is_identical_to(operation_given, phase_invariant=True),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_given.is_identical_to(operation_given, phase_invariant=False),
+        True
+    )
+
+    # preparation work: construct an equivalent Operation to operation_given
+    # (with the same phase of the gate)
+    operation_same_phase = circuit.Operation(
+        circuit.MatrixGate(gate.get_operator()),
+        qubits
+    )
+
+    # check the method to be tested for operation_given and operation_same_phase
+    _check_boolean(
+        self,
+        operation_given.is_identical_to(operation_same_phase,
+                                        phase_invariant=True),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_same_phase.is_identical_to(operation_given,
+                                             phase_invariant=True),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_given.is_identical_to(operation_same_phase,
+                                        phase_invariant=False),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_same_phase.is_identical_to(operation_given,
+                                             phase_invariant=False),
+        True
+    )
+
+    # preparation work: construct an equivalent Operation to operation_given
+    # (up to a global phase of the gate)
+    operation_other_phase = circuit.Operation(
+        circuit.MatrixGate(np.exp(0.137j)*gate.get_operator()),
+        qubits
+    )
+
+    # check the method to be tested for operation_given and
+    # operation_other_phase
+    _check_boolean(
+        self,
+        operation_given.is_identical_to(operation_other_phase,
+                                        phase_invariant=True),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_other_phase.is_identical_to(operation_given,
+                                              phase_invariant=True),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_given.is_identical_to(operation_other_phase,
+                                        phase_invariant=False),
+        False
+    )
+    _check_boolean(
+        self,
+        operation_other_phase.is_identical_to(operation_given,
+                                              phase_invariant=False),
+        False
+    )
+
+  @parameterized.parameters(itertools.chain(
+      # for having quick tests, limit the number of total qubits to 3
+      itertools.product(
+          [
+              # single-qubit gates
+              circuit.RotZGate(0.42),
+              circuit.PhasedXGate(0.47, 0.11),
+              circuit.MatrixGate(stats.unitary_group.rvs(2))
+          ],
+          [0, 1, 2]
+      ),
+      itertools.product(
+          [
+              # two-qubit gates
+              circuit.ControlledZGate(),
+              circuit.MatrixGate(stats.unitary_group.rvs(4))
+          ],
+          [0, 1]
+      ),
+      itertools.product(
+          [
+              # three-qubit gate
+              circuit.MatrixGate(stats.unitary_group.rvs(8))
+          ],
+          [0]
+      )
+  ))
+  def test_is_identical_to_with_different_qubits(self, gate, num_extra_qubits):
+    # preparation work: choose some random qubits in range(20)
+    num_involved_qubits = gate.get_num_qubits() + num_extra_qubits
+    involved_qubits = np.random.permutation(20)[:num_involved_qubits]
+
+    # preparation work: construct an Operation with the given gate
+    operation_given = circuit.Operation(
+        gate,
+        involved_qubits[:gate.get_num_qubits()]
+    )
+
+    # preparation work: determine an equivalent operator (potentially performing
+    # an identity action on some additional qubits), and the corresponding
+    # qubits
+    permutation = np.random.permutation(num_involved_qubits)
+    extended_operator = circuit.permute_qubits(
+        np.kron(gate.get_operator(), np.eye(2 ** num_extra_qubits)),
+        permutation,
+        inverse=False
+    )
+    extended_qubits = involved_qubits[permutation]
+
+    # preparation work: construct an Operation which includes the additional
+    # qubits (with the same phase of the gate)
+    operation_same_phase = circuit.Operation(
+        circuit.MatrixGate(extended_operator),
+        extended_qubits
+    )
+
+    # check the method to be tested for operation_given and operation_same_phase
+    _check_boolean(
+        self,
+        operation_given.is_identical_to(operation_same_phase,
+                                        phase_invariant=True),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_same_phase.is_identical_to(operation_given,
+                                             phase_invariant=True),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_given.is_identical_to(operation_same_phase,
+                                        phase_invariant=False),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_same_phase.is_identical_to(operation_given,
+                                             phase_invariant=False),
+        True
+    )
+
+    # preparation work: construct an Operation which includes the additional
+    # qubits (with another phase of the gate)
+    operation_other_phase = circuit.Operation(
+        circuit.MatrixGate(np.exp(0.137j)*extended_operator),
+        extended_qubits
+    )
+
+    # check the method to be tested for operation_given and
+    # operation_other_phase
+    _check_boolean(
+        self,
+        operation_given.is_identical_to(operation_other_phase,
+                                        phase_invariant=True),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_other_phase.is_identical_to(operation_given,
+                                              phase_invariant=True),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_given.is_identical_to(operation_other_phase,
+                                        phase_invariant=False),
+        False
+    )
+    _check_boolean(
+        self,
+        operation_other_phase.is_identical_to(operation_given,
+                                              phase_invariant=False),
+        False
+    )
+
+  @parameterized.parameters(
+      [
+          # ───RotZ───  vs.  ───PhasedX───
+          circuit.Operation(circuit.RotZGate(0.137), [42]),
+          circuit.Operation(circuit.PhasedXGate(0.47, 0.11), [42])
+      ],
+      [
+          # ───RotZ───
+          #             vs.
+          #                  ───PhasedX───
+          circuit.Operation(circuit.RotZGate(0.137), [42]),
+          circuit.Operation(circuit.PhasedXGate(0.47, 0.11), [19])
+      ],
+      [
+          # ───RotZ───       ───@───
+          #             vs.     │
+          #                  ───X───
+          circuit.Operation(circuit.RotZGate(0.137), [47]),
+          circuit.Operation(circuit.ControlledNotGate, [47, 11])
+      ],
+      [
+          # ───@───       ───X───
+          #    │     vs.     │
+          # ───X───       ───@───
+          circuit.Operation(circuit.ControlledNotGate(), [47, 11]),
+          circuit.Operation(circuit.ControlledNotGate(), [11, 47])
+      ],
+      [
+          # ───@───       ───@───
+          #    │     vs.     │
+          # ───X───       ───@───
+          circuit.Operation(circuit.ControlledNotGate(), [47, 11]),
+          circuit.Operation(circuit.ControlledZGate(), [47, 11])
+      ],
+      [
+          # ───@───       ───@───
+          #    │             │
+          # ───@───  vs.     │
+          #                  │
+          #               ───@───
+          circuit.Operation(circuit.ControlledZGate(), [42, 47]),
+          circuit.Operation(circuit.ControlledZGate(), [42, 11])
+      ],
+      [
+          # ───@───
+          #    │
+          # ───@───  vs.  ───@───
+          #                  │
+          #               ───@───
+          circuit.Operation(circuit.ControlledZGate(), [42, 47]),
+          circuit.Operation(circuit.ControlledZGate(), [11, 42])
+      ],
+      [
+          # ───@───
+          #    │
+          # ───@───
+          #          vs.
+          #               ───@───
+          #                  │
+          #               ───@───
+          circuit.Operation(circuit.ControlledZGate(), [47, 11]),
+          circuit.Operation(circuit.ControlledZGate(), [13, 17])
+      ]
+  )
+  def test_is_identical_to_negative(self, operation_a, operation_b):
+    # check the method to be tested for the given operations
+    _check_boolean(
+        self,
+        operation_a.is_identical_to(operation_b, phase_invariant=True),
+        False
+    )
+    _check_boolean(
+        self,
+        operation_b.is_identical_to(operation_a, phase_invariant=True),
+        False
+    )
+    _check_boolean(
+        self,
+        operation_a.is_identical_to(operation_b, phase_invariant=False),
+        False
+    )
+    _check_boolean(
+        self,
+        operation_b.is_identical_to(operation_a, phase_invariant=False),
+        False
+    )
+
+  @parameterized.parameters(itertools.product(
+      [1.0, np.exp(0.137j), np.exp(0.42j), -1.0],
+      repeat=2
+  ))
+  def test_is_identical_to_for_identity(self, phase_a, phase_b):
+    # preparation work: construct two idle Operations
+    operation_a = circuit.Operation(
+        circuit.MatrixGate(phase_a*np.eye(2)),
+        [42]
+    )
+    operation_b = circuit.Operation(
+        circuit.MatrixGate(phase_b*np.eye(4)),
+        [47, 11]
+    )
+
+    # check the method to be tested for operation_a and operation_b
+    _check_boolean(
+        self,
+        operation_a.is_identical_to(operation_b, phase_invariant=True),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_b.is_identical_to(operation_a, phase_invariant=True),
+        True
+    )
+    _check_boolean(
+        self,
+        operation_a.is_identical_to(operation_b, phase_invariant=False),
+        np.isclose(phase_a, phase_b)
+    )
+    _check_boolean(
+        self,
+        operation_b.is_identical_to(operation_a, phase_invariant=False),
+        np.isclose(phase_a, phase_b)
+    )
+
+  def test_is_identical_to_type_error(self):
+    # preparation work: construct an Operation
+    operation = circuit.Operation(circuit.MatrixGate(np.eye(4)), [47, 11])
+
+    with self.assertRaisesWithLiteralMatch(
+        TypeError,
+        'unexpected type for other: range (expected an Operation)'):
+      operation.is_identical_to(range(42))
+
   def test_merge_local_operations(self):
     # preparation work: construct four local random gates
     gate_0 = _random_matrix_gate(1)
